@@ -1,0 +1,5 @@
+error: #[range] cannot be used on field `field`: incompatible field type
+ --> tests/compile-fail/range_on_string.rs:6:5
+  |
+6 |     field: String,
+  |     ^^^^^
