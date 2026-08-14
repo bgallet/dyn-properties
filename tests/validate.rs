@@ -15,7 +15,6 @@ struct DbConfig {
     port: u32,
 
     #[duration_range(min = "100ms", max = "30s")]
-    #[default("5s")]
     connect_timeout: Duration,
 
     #[range(min = 1, max = 100)]

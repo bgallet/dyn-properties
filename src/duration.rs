@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Duration(StdDuration);
 
 impl Deref for Duration {
