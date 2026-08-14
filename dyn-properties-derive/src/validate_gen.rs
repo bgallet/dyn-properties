@@ -11,6 +11,7 @@ pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream
 
     quote_spanned! {struct_name.span()=>
         impl dyn_properties::Validate for #struct_name {
+            #[allow(unused_comparisons, clippy::absurd_extreme_comparisons)]
             fn validate(&self) -> ::std::result::Result<(), dyn_properties::Error> {
                 #(#checks)*
                 ::std::result::Result::Ok(())

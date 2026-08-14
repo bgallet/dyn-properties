@@ -9,6 +9,7 @@ pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream
     let assignments: Vec<TokenStream> = fields.iter().map(field_default).collect();
 
     quote_spanned! {struct_name.span()=>
+        #[allow(clippy::derivable_impls)]
         impl ::std::default::Default for #struct_name {
             fn default() -> Self {
                 Self {
