@@ -104,7 +104,7 @@ fn check_duration_has_default(
     default: &Option<syn::Expr>,
     field_ident: &syn::Ident,
 ) -> Result<()> {
-    if matches!(kind, FieldKind::Duration) && default.is_none() {
+    if kind.requires_explicit_default() && default.is_none() {
         Err(Error::new_spanned(
             field_ident,
             format!(

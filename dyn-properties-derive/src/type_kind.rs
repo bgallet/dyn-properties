@@ -8,6 +8,16 @@ pub enum FieldKind {
     Nested,
 }
 
+impl FieldKind {
+    /// Whether a field of this kind must carry an explicit `#[default(...)]` attribute
+    /// rather than falling back to the type's own `Default::default()`. Only bare
+    /// `Duration` fields require this — `Option<Duration>` is exempt, since its fallback
+    /// is `None` (via `Option<T>`'s own `Default`), never `Duration::default()`.
+    pub fn requires_explicit_default(&self) -> bool {
+        matches!(self, FieldKind::Duration)
+    }
+}
+
 const NUMERIC_TYPES: &[&str] = &[
     "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64",
 ];
