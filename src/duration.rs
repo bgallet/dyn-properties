@@ -3,6 +3,16 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
+/// A [`std::time::Duration`] that (de)serializes from a compact string like `"30s"`
+/// instead of TOML's native table/seconds representation, and that fields with
+/// `#[duration_range(min = "...", max = "...")]` bounds must use.
+///
+/// String grammar: `<digits><unit>`, where `<digits>` is one or more ASCII digits and
+/// `<unit>` is one of `ms` (milliseconds), `s` (seconds), `m` (minutes), `h` (hours), or
+/// `d` (days). No sign, decimal point, or whitespace is allowed (e.g. `"100ms"`, `"30s"`,
+/// `"5m"`, `"2h"`, `"1d"`). Parsing is exposed via [`FromStr`] and via [`serde::Deserialize`].
+///
+/// Derefs to `std::time::Duration` for comparisons and other standard operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Duration(StdDuration);
 
@@ -19,6 +29,8 @@ impl fmt::Display for Duration {
     }
 }
 
+/// The string failed to parse as a [`Duration`]: it wasn't `<digits>` followed by one of
+/// `ms`, `s`, `m`, `h`, `d`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseDurationError(String);
 

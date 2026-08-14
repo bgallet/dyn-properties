@@ -1,13 +1,30 @@
 use std::fmt;
 
+/// Everything that can go wrong loading and validating a config file: reading it,
+/// parsing it as TOML, or checking it against `#[range]`/`#[len]`/`#[duration_range]`
+/// bounds.
 #[derive(Debug)]
 pub enum Error {
+    /// The config file could not be read (e.g. it doesn't exist or isn't readable).
     Io(std::io::Error),
+    /// The file's contents are not valid TOML, or don't match the target struct's shape.
     TomlParse(toml::de::Error),
-    Validation { field_path: String, reason: String },
+    /// The file parsed fine but a field violated its declared bound.
+    Validation {
+        /// Dot-separated path to the offending field, e.g. `"pool.idle_timeout"` for a
+        /// nested struct.
+        field_path: String,
+        /// Human-readable description of why the value is out of bounds.
+        reason: String,
+    },
 }
 
 impl Error {
+    /// Prepends `parent_field` to a [`Error::Validation`]'s `field_path`, turning e.g.
+    /// `"idle_timeout"` into `"pool.idle_timeout"` when a nested struct's validation
+    /// error bubbles up through its parent. Non-`Validation` variants pass through
+    /// unchanged. Used by the derive macro's generated `Validate` impls for nested
+    /// struct fields; not typically called directly.
     pub fn prefixed(self, parent_field: &str) -> Self {
         match self {
             Error::Validation { field_path, reason } => Error::Validation {
