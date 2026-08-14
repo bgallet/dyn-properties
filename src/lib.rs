@@ -8,6 +8,9 @@ mod validate;
 pub use error::Error;
 pub use validate::Validate;
 
+mod watcher;
+pub use watcher::PropertyWatcher;
+
 pub mod exports {
     pub use serde;
 }

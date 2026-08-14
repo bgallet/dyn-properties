@@ -14,7 +14,7 @@ tracing = "0.1"
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
 tempfile = "3"
-tracing-test = "0.2"
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
 
 [workspace]
 members = ["dyn-properties-derive"]
