@@ -1,0 +1,5 @@
+error: field `field` is a Duration and must have a #[default("...")] attribute: Duration has no implicit default, since a silent zero-duration is rarely the right fallback for a timeout or interval. Wrap the field in Option<Duration> instead if "unset" (None) is what you actually want.
+  --> tests/compile-fail/duration_without_default.rs:11:5
+   |
+11 |     field: Duration,
+   |     ^^^^^

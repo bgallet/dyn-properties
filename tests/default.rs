@@ -62,15 +62,3 @@ fn option_field_with_default_attribute_becomes_some() {
     let cfg = DbConfig::default();
     assert_eq!(cfg.label, Some("primary".to_string()));
 }
-
-#[derive(DynProperties)]
-struct TimeoutConfig {
-    #[duration_range(min = "0s", max = "1h")]
-    idle_timeout: dyn_properties::Duration,
-}
-
-#[test]
-fn unannotated_duration_field_defaults_to_zero() {
-    let cfg = TimeoutConfig::default();
-    assert!((*cfg.idle_timeout).is_zero());
-}

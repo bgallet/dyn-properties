@@ -13,7 +13,14 @@ use std::time::Duration as StdDuration;
 /// `"5m"`, `"2h"`, `"1d"`). Parsing is exposed via [`FromStr`] and via [`serde::Deserialize`].
 ///
 /// Derefs to `std::time::Duration` for comparisons and other standard operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+///
+/// Deliberately does **not** implement [`Default`]: a silent zero-duration is rarely the
+/// right fallback for a timeout or interval. Every plain `Duration` field on a
+/// `#[derive(DynProperties)]` struct must carry an explicit `#[default("...")]` attribute
+/// — the derive macro rejects one that doesn't, at compile time. If "unset" is a
+/// meaningful state for a field, use `Option<Duration>` instead, which defaults to `None`
+/// without needing an explicit `#[default(..)]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Duration(StdDuration);
 
 impl Deref for Duration {

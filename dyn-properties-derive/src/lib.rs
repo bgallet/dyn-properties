@@ -52,6 +52,7 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
         if let Some(bound) = &field_attrs.bound {
             check_bound_compatibility(bound, &kind, &field_ident)?;
         }
+        check_duration_has_default(&kind, &field_attrs.default, &field_ident)?;
         parsed_fields.push(ParsedField {
             field,
             ident: field_ident,
@@ -95,5 +96,25 @@ fn check_bound_compatibility(bound: &Bound, kind: &FieldKind, field_ident: &syn:
             field_ident,
             format!("#[{attr_name}] cannot be used on field `{field_ident}`: incompatible field type"),
         ))
+    }
+}
+
+fn check_duration_has_default(
+    kind: &FieldKind,
+    default: &Option<syn::Expr>,
+    field_ident: &syn::Ident,
+) -> Result<()> {
+    if matches!(kind, FieldKind::Duration) && default.is_none() {
+        Err(Error::new_spanned(
+            field_ident,
+            format!(
+                "field `{field_ident}` is a Duration and must have a #[default(\"...\")] attribute: \
+                 Duration has no implicit default, since a silent zero-duration is rarely the right \
+                 fallback for a timeout or interval. Wrap the field in Option<Duration> instead if \
+                 \"unset\" (None) is what you actually want."
+            ),
+        ))
+    } else {
+        Ok(())
     }
 }
