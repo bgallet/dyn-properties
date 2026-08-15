@@ -1,5 +1,0 @@
-error: #[duration_range] cannot be used on field `field`: incompatible field type
- --> tests/compile-fail/duration_range_on_numeric.rs:6:5
-  |
-6 |     field: u32,
-  |     ^^^^^

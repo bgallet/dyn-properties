@@ -1,0 +1,5 @@
+error: #[len] cannot be used on field `field`: incompatible field type
+  --> tests/compile-fail/len_on_duration.rs:12:5
+   |
+12 |     field: Duration,
+   |     ^^^^^

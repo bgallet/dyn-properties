@@ -1,7 +1,7 @@
 use crate::Error;
 
-/// Checks that a value's fields satisfy their declared bounds (`#[range]`, `#[len]`,
-/// `#[duration_range]`) after it has been deserialized.
+/// Checks that a value's fields satisfy their declared bounds (`#[range]`, `#[len]`)
+/// after it has been deserialized.
 ///
 /// This trait is implemented for you by `#[derive(DynProperties)]`; it isn't meant to
 /// be implemented by hand. [`PropertyWatcher`](crate::PropertyWatcher) calls it after

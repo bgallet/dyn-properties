@@ -75,7 +75,7 @@ async fn reload_keeps_last_good_value_on_invalid_change_and_logs() {
     assert!(logs_contain("port: 0 is out of range"));
 }
 
-/// A malformed `#[duration_range]` min literal on an `Option<Duration>` field. The
+/// A malformed `#[range]` min literal on an `Option<Duration>` field. The
 /// `LazyLock` guarding that literal isn't forced while the field stays `None`, so
 /// `start()` against a file that omits it succeeds; the first file update that sets the
 /// field to `Some(..)` forces the `LazyLock` and its `.expect(..)` panics inside
@@ -86,7 +86,7 @@ struct PanicProneConfig {
     #[default(8080)]
     port: u16,
 
-    #[duration_range(min = "not-a-duration", max = "1h")]
+    #[range(min = "not-a-duration", max = "1h")]
     grace_period: Option<dyn_properties::Duration>,
 }
 

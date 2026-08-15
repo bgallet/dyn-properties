@@ -20,7 +20,7 @@ pub(crate) struct ParsedField<'a> {
     pub default: Option<syn::Expr>,
 }
 
-#[proc_macro_derive(DynProperties, attributes(range, len, duration_range, default))]
+#[proc_macro_derive(DynProperties, attributes(range, len, default))]
 pub fn derive_dyn_properties(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match expand(&input) {
@@ -81,8 +81,8 @@ fn check_bound_compatibility(bound: &Bound, kind: &FieldKind, field_ident: &syn:
     let ok = matches!(
         (bound, effective_kind),
         (Bound::Range { .. }, FieldKind::Numeric)
+            | (Bound::Range { .. }, FieldKind::Duration)
             | (Bound::Len { .. }, FieldKind::String)
-            | (Bound::DurationRange { .. }, FieldKind::Duration)
     );
     if ok {
         Ok(())
@@ -90,7 +90,6 @@ fn check_bound_compatibility(bound: &Bound, kind: &FieldKind, field_ident: &syn:
         let attr_name = match bound {
             Bound::Range { .. } => "range",
             Bound::Len { .. } => "len",
-            Bound::DurationRange { .. } => "duration_range",
         };
         Err(Error::new_spanned(
             field_ident,

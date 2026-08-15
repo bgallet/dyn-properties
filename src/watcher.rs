@@ -40,7 +40,7 @@ where
             loop {
                 ticker.tick().await;
                 // Run each tick's load-and-validate in its own task so a panic inside it
-                // (e.g. a malformed #[duration_range] literal only forced once a
+                // (e.g. a malformed #[range] literal only forced once a
                 // previously-`None` Option<Duration> field first becomes `Some`) is
                 // caught as a `JoinError` here instead of unwinding this loop's task and
                 // silently ending all future reloads.

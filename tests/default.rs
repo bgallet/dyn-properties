@@ -20,7 +20,7 @@ struct DbConfig {
     #[default(5432)]
     port: u16,
 
-    #[duration_range(min = "100ms", max = "30s")]
+    #[range(min = "100ms", max = "30s")]
     #[default("5s")]
     connect_timeout: dyn_properties::Duration,
 

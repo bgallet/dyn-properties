@@ -14,7 +14,7 @@
 //!     #[default(8080)]
 //!     port: u16,
 //!
-//!     #[duration_range(min = "100ms", max = "30s")]
+//!     #[range(min = "100ms", max = "30s")]
 //!     #[default("5s")]
 //!     request_timeout: Duration,
 //! }

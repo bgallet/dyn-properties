@@ -44,7 +44,7 @@ fn field_check(field: &ParsedField) -> TokenStream {
                 });
             }
         },
-        (FieldKind::Duration, Some(Bound::DurationRange { min, max })) => {
+        (FieldKind::Duration, Some(Bound::Range { min, max })) => {
             duration_range_check(ident, &field_name, min, max, span)
         }
         (FieldKind::Option(inner), Some(bound)) => option_bound_check(ident, &field_name, inner, bound, span),
@@ -67,7 +67,7 @@ fn option_bound_check(
     bound: &Bound,
     span: proc_macro2::Span,
 ) -> TokenStream {
-    if let (FieldKind::Duration, Bound::DurationRange { min, max }) = (inner, bound) {
+    if let (FieldKind::Duration, Bound::Range { min, max }) = (inner, bound) {
         return option_duration_range_check(ident, field_name, min, max, span);
     }
 
@@ -109,11 +109,11 @@ fn duration_range_check(
         {
             static MIN: ::std::sync::LazyLock<dyn_properties::Duration> = ::std::sync::LazyLock::new(|| {
                 <dyn_properties::Duration as ::std::str::FromStr>::from_str(#min)
-                    .expect(&::std::format!("invalid #[duration_range] min literal on field `{}`", #field_name))
+                    .expect(&::std::format!("invalid #[range] min literal on field `{}`", #field_name))
             });
             static MAX: ::std::sync::LazyLock<dyn_properties::Duration> = ::std::sync::LazyLock::new(|| {
                 <dyn_properties::Duration as ::std::str::FromStr>::from_str(#max)
-                    .expect(&::std::format!("invalid #[duration_range] max literal on field `{}`", #field_name))
+                    .expect(&::std::format!("invalid #[range] max literal on field `{}`", #field_name))
             });
             if self.#ident < *MIN || self.#ident > *MAX {
                 return ::std::result::Result::Err(dyn_properties::Error::Validation {
@@ -136,11 +136,11 @@ fn option_duration_range_check(
         if let ::std::option::Option::Some(v) = &self.#ident {
             static MIN: ::std::sync::LazyLock<dyn_properties::Duration> = ::std::sync::LazyLock::new(|| {
                 <dyn_properties::Duration as ::std::str::FromStr>::from_str(#min)
-                    .expect(&::std::format!("invalid #[duration_range] min literal on field `{}`", #field_name))
+                    .expect(&::std::format!("invalid #[range] min literal on field `{}`", #field_name))
             });
             static MAX: ::std::sync::LazyLock<dyn_properties::Duration> = ::std::sync::LazyLock::new(|| {
                 <dyn_properties::Duration as ::std::str::FromStr>::from_str(#max)
-                    .expect(&::std::format!("invalid #[duration_range] max literal on field `{}`", #field_name))
+                    .expect(&::std::format!("invalid #[range] max literal on field `{}`", #field_name))
             });
             if *v < *MIN || *v > *MAX {
                 return ::std::result::Result::Err(dyn_properties::Error::Validation {

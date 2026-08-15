@@ -4,8 +4,8 @@ use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
 /// A [`std::time::Duration`] that (de)serializes from a compact string like `"30s"`
-/// instead of TOML's native table/seconds representation, and that fields with
-/// `#[duration_range(min = "...", max = "...")]` bounds must use.
+/// instead of TOML's native table/seconds representation, and that fields bounded with
+/// `#[range(min = "...", max = "...")]` (min/max as duration strings) must use.
 ///
 /// String grammar: `<digits><unit>`, where `<digits>` is one or more ASCII digits and
 /// `<unit>` is one of `ms` (milliseconds), `s` (seconds), `m` (minutes), `h` (hours), or

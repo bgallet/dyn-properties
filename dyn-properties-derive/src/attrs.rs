@@ -1,9 +1,15 @@
 use syn::{Attribute, Error, Expr, Result};
 
 pub enum Bound {
+    /// A value-comparison bound: `self.field < min || self.field > max`. Used for both
+    /// numeric fields (min/max are numeric literals) and `Duration` fields (min/max are
+    /// string literals parsed via `Duration::from_str`) — which comparison applies is
+    /// decided later, from the field's own `FieldKind`, not from the attribute name.
     Range { min: Expr, max: Expr },
+    /// A length-comparison bound: `self.field.len() < min || self.field.len() > max`.
+    /// Used for `String` fields. Kept separate from `Range` since it measures a derived
+    /// property (length) rather than the field's own value.
     Len { min: Expr, max: Expr },
-    DurationRange { min: Expr, max: Expr },
 }
 
 pub struct FieldAttrs {
@@ -35,20 +41,15 @@ pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
     let mut default: Option<Expr> = None;
 
     for attr in attrs {
-        if attr.path().is_ident("range") || attr.path().is_ident("len") || attr.path().is_ident("duration_range") {
+        if attr.path().is_ident("range") || attr.path().is_ident("len") {
             if bound.is_some() {
-                return Err(Error::new_spanned(
-                    attr,
-                    "only one of #[range], #[len], #[duration_range] is allowed per field",
-                ));
+                return Err(Error::new_spanned(attr, "only one of #[range], #[len] is allowed per field"));
             }
             let (min, max) = parse_min_max(attr)?;
             bound = Some(if attr.path().is_ident("range") {
                 Bound::Range { min, max }
-            } else if attr.path().is_ident("len") {
-                Bound::Len { min, max }
             } else {
-                Bound::DurationRange { min, max }
+                Bound::Len { min, max }
             });
         } else if attr.path().is_ident("default") {
             default = Some(attr.parse_args()?);
@@ -95,12 +96,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_duration_range_bound() {
+    fn parses_range_bound_with_string_literals_for_duration() {
         let attrs = first_field_attrs(quote::quote! {
-            struct Foo { #[duration_range(min = "100ms", max = "30s")] field: Duration }
+            struct Foo { #[range(min = "100ms", max = "30s")] field: Duration }
         })
         .unwrap();
-        assert!(matches!(attrs.bound, Some(Bound::DurationRange { .. })));
+        assert!(matches!(attrs.bound, Some(Bound::Range { .. })));
     }
 
     #[test]

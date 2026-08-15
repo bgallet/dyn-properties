@@ -1,8 +1,7 @@
 use std::fmt;
 
 /// Everything that can go wrong loading and validating a config file: reading it,
-/// parsing it as TOML, or checking it against `#[range]`/`#[len]`/`#[duration_range]`
-/// bounds.
+/// parsing it as TOML, or checking it against `#[range]`/`#[len]` bounds.
 #[derive(Debug)]
 pub enum Error {
     /// The config file could not be read (e.g. it doesn't exist or isn't readable).
