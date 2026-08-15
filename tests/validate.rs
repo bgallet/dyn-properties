@@ -93,3 +93,45 @@ fn nested_struct_validated_with_dot_joined_field_path() {
         _ => panic!("expected Validation error"),
     }
 }
+
+#[derive(DynProperties)]
+struct Level3 {
+    #[range(min = 0, max = 10)]
+    deep: u32,
+}
+
+#[derive(DynProperties)]
+struct Level2 {
+    level3: Level3,
+}
+
+#[derive(DynProperties)]
+struct Level1 {
+    level2: Level2,
+}
+
+#[derive(DynProperties)]
+struct RootConfig {
+    level1: Level1,
+}
+
+#[test]
+fn three_levels_of_nesting_compose_a_dot_joined_field_path() {
+    let mut cfg = RootConfig {
+        level1: Level1 {
+            level2: Level2 {
+                level3: Level3 { deep: 5 },
+            },
+        },
+    };
+    assert!(cfg.validate().is_ok());
+
+    cfg.level1.level2.level3.deep = 999;
+    let err = cfg.validate().unwrap_err();
+    match err {
+        dyn_properties::Error::Validation { field_path, .. } => {
+            assert_eq!(field_path, "level1.level2.level3.deep")
+        }
+        _ => panic!("expected Validation error"),
+    }
+}
