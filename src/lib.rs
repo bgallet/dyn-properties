@@ -66,6 +66,11 @@ pub use duration::{parse_duration, ParseDurationError};
 #[doc(hidden)]
 pub use duration::deserialize_duration_option;
 
+mod format;
+pub use format::Format;
+#[cfg(feature = "toml")]
+pub use format::Toml;
+
 mod error;
 mod validate;
 pub use error::Error;
