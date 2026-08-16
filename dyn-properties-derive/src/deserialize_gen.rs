@@ -7,6 +7,7 @@ use crate::ParsedField;
 
 pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream {
     let helper_name = format_ident!("__{}DynPropertiesHelper", struct_name);
+    let struct_name_str = struct_name.to_string();
 
     let helper_fields: Vec<TokenStream> = fields.iter().map(|f| helper_field(f)).collect();
     let overlay_assignments: Vec<TokenStream> = fields.iter().map(|f| overlay_assignment(f)).collect();
@@ -21,9 +22,33 @@ pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream
                 #[serde(crate = "dyn_properties::exports::serde")]
                 struct #helper_name {
                     #(#helper_fields)*
+                    // Catches any key that doesn't match one of the named fields above,
+                    // instead of serde's default of silently discarding it — logged
+                    // below, never a hard error (a config file staying loadable despite
+                    // a stray/typo'd key is the whole point).
+                    #[serde(flatten)]
+                    __dyn_properties_unknown_fields: ::std::collections::HashMap<
+                        ::std::string::String,
+                        dyn_properties::exports::serde::de::IgnoredAny,
+                    >,
                 }
 
                 let helper = <#helper_name as dyn_properties::exports::serde::Deserialize>::deserialize(deserializer)?;
+
+                if !helper.__dyn_properties_unknown_fields.is_empty() {
+                    let mut unknown_fields: ::std::vec::Vec<&str> = helper
+                        .__dyn_properties_unknown_fields
+                        .keys()
+                        .map(|k| k.as_str())
+                        .collect();
+                    unknown_fields.sort_unstable();
+                    dyn_properties::exports::tracing::warn!(
+                        struct_name = #struct_name_str,
+                        unknown_fields = ?unknown_fields,
+                        "dyn-properties: ignoring unknown field(s)"
+                    );
+                }
+
                 let default_instance = <#struct_name as ::std::default::Default>::default();
 
                 ::std::result::Result::Ok(#struct_name {

@@ -1,4 +1,5 @@
 use dyn_properties::DynProperties;
+use tracing_test::traced_test;
 
 #[derive(DynProperties)]
 struct PoolConfig {
@@ -79,4 +80,32 @@ fn fully_specified_toml_overrides_everything() {
     assert_eq!(cfg.port, 6543);
     assert_eq!(cfg.pool.idle, 10);
     assert_eq!(cfg.pool.active, 4);
+}
+
+#[test]
+#[traced_test]
+fn unknown_top_level_field_is_logged_and_ignored() {
+    let cfg: DbConfig = toml::from_str("port = 9999\ntypo_field = 1").unwrap();
+    assert_eq!(cfg.port, 9999);
+    assert_eq!(cfg.host, "localhost");
+    assert!(logs_contain("ignoring unknown field"));
+    assert!(logs_contain("DbConfig"));
+    assert!(logs_contain("typo_field"));
+}
+
+#[test]
+#[traced_test]
+fn unknown_nested_field_is_logged_against_the_nested_struct_name() {
+    let cfg: DbConfig = toml::from_str("[pool]\nidle = 40\nbogus = 1").unwrap();
+    assert_eq!(cfg.pool.idle, 40);
+    assert!(logs_contain("ignoring unknown field"));
+    assert!(logs_contain("PoolConfig"));
+    assert!(logs_contain("bogus"));
+}
+
+#[test]
+#[traced_test]
+fn no_warning_when_every_field_is_known() {
+    let _cfg: DbConfig = toml::from_str("port = 9999").unwrap();
+    assert!(!logs_contain("ignoring unknown field"));
 }

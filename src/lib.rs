@@ -100,4 +100,5 @@ pub use watcher::PropertyWatcher;
 
 pub mod exports {
     pub use serde;
+    pub use tracing;
 }
