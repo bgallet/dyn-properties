@@ -18,8 +18,8 @@ impl Format for Toml {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Validate, DynProperties};
     use crate as dyn_properties;
+    use crate::{DynProperties, Validate};
 
     #[derive(DynProperties)]
     struct Cfg {

@@ -93,7 +93,10 @@ mod tests {
 
     #[test]
     fn error_message_for_empty_string() {
-        assert_eq!(validate_duration_literal_syntax("").unwrap_err(), "no digits in \"\"");
+        assert_eq!(
+            validate_duration_literal_syntax("").unwrap_err(),
+            "no digits in \"\""
+        );
     }
 
     #[test]

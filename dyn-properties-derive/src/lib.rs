@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Error, Fields, Result};
+use syn::{Data, DeriveInput, Error, Fields, Result, parse_macro_input};
 
 mod attrs;
 mod default_gen;
@@ -39,15 +39,23 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
                 return Err(Error::new_spanned(
                     input,
                     "DynProperties only supports structs with named fields",
-                ))
+                ));
             }
         },
-        _ => return Err(Error::new_spanned(input, "DynProperties only supports structs")),
+        _ => {
+            return Err(Error::new_spanned(
+                input,
+                "DynProperties only supports structs",
+            ));
+        }
     };
 
     let mut parsed_fields = Vec::new();
     for field in named_fields {
-        let field_ident = field.ident.clone().expect("named field always has an ident");
+        let field_ident = field
+            .ident
+            .clone()
+            .expect("named field always has an ident");
         let kind = type_kind::classify(&field.ty)?;
         let field_attrs = attrs::parse_field_attrs(&field.attrs)?;
         if let Some(bound) = &field_attrs.bound {
@@ -87,7 +95,11 @@ fn effective_kind(kind: &FieldKind) -> &FieldKind {
     }
 }
 
-fn check_bound_compatibility(bound: &Bound, kind: &FieldKind, field_ident: &syn::Ident) -> Result<()> {
+fn check_bound_compatibility(
+    bound: &Bound,
+    kind: &FieldKind,
+    field_ident: &syn::Ident,
+) -> Result<()> {
     let effective_kind = effective_kind(kind);
     let ok = matches!(
         (bound, effective_kind),
@@ -104,7 +116,9 @@ fn check_bound_compatibility(bound: &Bound, kind: &FieldKind, field_ident: &syn:
         };
         Err(Error::new_spanned(
             field_ident,
-            format!("#[{attr_name}] cannot be used on field `{field_ident}`: incompatible field type"),
+            format!(
+                "#[{attr_name}] cannot be used on field `{field_ident}`: incompatible field type"
+            ),
         ))
     }
 }
@@ -147,7 +161,10 @@ fn check_duration_bound_literal_syntax(bound: &Bound, kind: &FieldKind) -> Resul
 /// If `default` is a `#[default("...")]` on a Duration-kind field (bare or
 /// `Option`-wrapped), requires it to be a string literal with valid duration syntax —
 /// checked at macro-expansion time for the same reason as bound literals above.
-fn check_duration_default_literal_syntax(default: &Option<syn::Expr>, kind: &FieldKind) -> Result<()> {
+fn check_duration_default_literal_syntax(
+    default: &Option<syn::Expr>,
+    kind: &FieldKind,
+) -> Result<()> {
     let Some(expr) = default else {
         return Ok(());
     };
@@ -168,5 +185,6 @@ fn check_duration_literal_expr(expr: &syn::Expr) -> Result<()> {
             "Duration bounds and defaults must be string literals (e.g. \"30s\"), so they can be validated at compile time",
         ));
     };
-    duration_syntax::validate_duration_literal_syntax(&lit_str.value()).map_err(|msg| Error::new_spanned(lit_str, msg))
+    duration_syntax::validate_duration_literal_syntax(&lit_str.value())
+        .map_err(|msg| Error::new_spanned(lit_str, msg))
 }

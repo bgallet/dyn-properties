@@ -2,9 +2,9 @@ use proc_macro2::TokenStream;
 use quote::quote_spanned;
 use syn::spanned::Spanned;
 
+use crate::ParsedField;
 use crate::attrs::Bound;
 use crate::type_kind::FieldKind;
-use crate::ParsedField;
 
 pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream {
     let checks: Vec<TokenStream> = fields.iter().map(field_check).collect();
@@ -47,15 +47,19 @@ fn field_check(field: &ParsedField) -> TokenStream {
         (FieldKind::Duration, Some(Bound::Range { min, max })) => {
             duration_range_check(ident, &field_name, min, max, span)
         }
-        (FieldKind::Option(inner), Some(bound)) => option_bound_check(ident, &field_name, inner, bound, span),
+        (FieldKind::Option(inner), Some(bound)) => {
+            option_bound_check(ident, &field_name, inner, bound, span)
+        }
         (FieldKind::Nested, _) => quote_spanned! {span=>
             dyn_properties::Validate::validate(&self.#ident).map_err(|e| e.prefixed(#field_name))?;
         },
-        (FieldKind::Option(inner), None) if matches!(**inner, FieldKind::Nested) => quote_spanned! {span=>
-            if let ::std::option::Option::Some(v) = &self.#ident {
-                dyn_properties::Validate::validate(v).map_err(|e| e.prefixed(#field_name))?;
+        (FieldKind::Option(inner), None) if matches!(**inner, FieldKind::Nested) => {
+            quote_spanned! {span=>
+                if let ::std::option::Option::Some(v) = &self.#ident {
+                    dyn_properties::Validate::validate(v).map_err(|e| e.prefixed(#field_name))?;
+                }
             }
-        },
+        }
         _ => TokenStream::new(),
     }
 }
