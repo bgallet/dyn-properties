@@ -1,7 +1,9 @@
 //! Reads a TOML file into a validated, hot-reloadable struct.
 //!
 //! ```no_run
-//! use dyn_properties::{DynProperties, PropertyWatcher};
+//! # #[cfg(feature = "toml")]
+//! # {
+//! use dyn_properties::{DynProperties, PropertyWatcher, Toml};
 //! use std::sync::Arc;
 //! use std::time::Duration;
 //!
@@ -21,7 +23,7 @@
 //! }
 //!
 //! # async fn run() -> Result<(), dyn_properties::Error> {
-//! let watcher = PropertyWatcher::<AppConfig>::start(
+//! let watcher = PropertyWatcher::<AppConfig, Toml>::start(
 //!     "config.toml",
 //!     Duration::from_secs(30),
 //! ).await?;
@@ -39,6 +41,7 @@
 //! # Ok(())
 //! # }
 //! # async fn some_async_fn(_cfg: Arc<AppConfig>) {}
+//! # }
 //! ```
 //!
 //! ## Testing your config struct

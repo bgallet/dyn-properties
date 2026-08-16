@@ -1,25 +1,32 @@
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use arc_swap::{ArcSwap, Guard};
 use tokio::task::JoinHandle;
 
-use crate::{Error, Validate};
+use crate::{Error, Format, Validate};
 
-/// A TOML config file loaded once and then polled on a background task, exposing the
-/// latest successfully-parsed-and-validated value via [`load`](Self::load).
+/// A config file loaded once and then polled on a background task, exposing the latest
+/// successfully-parsed-and-validated value via [`load`](Self::load).
 ///
-/// A failed reload (I/O error, TOML parse error, or a `Validate` bound violation) is
-/// logged via `tracing` and discarded, leaving the previously-loaded value in place.
-/// Dropping the watcher stops the background polling task.
-pub struct PropertyWatcher<T> {
+/// `F` selects the file format (e.g. [`Toml`](crate::Toml), [`Json`](crate::Json), or a
+/// caller-defined [`Format`] implementation) — see [`Format`] for why this is a type
+/// parameter rather than runtime extension-sniffing.
+///
+/// A failed reload (I/O error, parse error, or a `Validate` bound violation) is logged
+/// via `tracing` and discarded, leaving the previously-loaded value in place. Dropping
+/// the watcher stops the background polling task.
+pub struct PropertyWatcher<T, F> {
     inner: Arc<ArcSwap<T>>,
     handle: JoinHandle<()>,
+    _format: PhantomData<F>,
 }
 
-impl<T> PropertyWatcher<T>
+impl<T, F> PropertyWatcher<T, F>
 where
     T: serde::de::DeserializeOwned + Validate + Default + Send + Sync + 'static,
+    F: Format + Send + Sync + 'static,
 {
     /// Loads and validates `path` once, then spawns a background task that re-loads it
     /// every `interval`, replacing the stored value on success and keeping the previous
@@ -29,7 +36,7 @@ where
     /// once the initial load succeeds.
     pub async fn start(path: impl Into<PathBuf>, interval: std::time::Duration) -> Result<Self, Error> {
         let path = path.into();
-        let initial = load_and_validate::<T>(&path).await?;
+        let initial = load_and_validate::<T, F>(&path).await?;
         let inner = Arc::new(ArcSwap::new(Arc::new(initial)));
 
         let watcher_inner = Arc::clone(&inner);
@@ -45,7 +52,7 @@ where
                 // caught as a `JoinError` here instead of unwinding this loop's task and
                 // silently ending all future reloads.
                 let tick_path = watch_path.clone();
-                match tokio::spawn(async move { load_and_validate::<T>(&tick_path).await }).await {
+                match tokio::spawn(async move { load_and_validate::<T, F>(&tick_path).await }).await {
                     Ok(Ok(value)) => {
                         watcher_inner.store(Arc::new(value));
                     }
@@ -71,7 +78,11 @@ where
             }
         });
 
-        Ok(PropertyWatcher { inner, handle })
+        Ok(PropertyWatcher {
+            inner,
+            handle,
+            _format: PhantomData,
+        })
     }
 
     /// Returns a guard giving read access to the current value.
@@ -88,18 +99,19 @@ where
 
 /// Aborts the background reload task; the file is no longer polled once the watcher is
 /// dropped.
-impl<T> Drop for PropertyWatcher<T> {
+impl<T, F> Drop for PropertyWatcher<T, F> {
     fn drop(&mut self) {
         self.handle.abort();
     }
 }
 
-async fn load_and_validate<T>(path: &Path) -> Result<T, Error>
+async fn load_and_validate<T, F>(path: &Path) -> Result<T, Error>
 where
     T: serde::de::DeserializeOwned + Validate,
+    F: Format,
 {
-    let contents = tokio::fs::read_to_string(path).await?;
-    let value: T = toml::from_str(&contents)?;
+    let bytes = tokio::fs::read(path).await?;
+    let value: T = F::parse(&bytes).map_err(|e| Error::Parse(Box::new(e)))?;
     value.validate()?;
     Ok(value)
 }

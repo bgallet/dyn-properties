@@ -23,5 +23,9 @@ toml = ["dep:toml"]
 name = "deserialize"
 required-features = ["toml"]
 
+[[test]]
+name = "watcher"
+required-features = ["toml"]
+
 [workspace]
 members = ["dyn-properties-derive"]

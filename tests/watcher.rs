@@ -1,4 +1,4 @@
-use dyn_properties::{DynProperties, PropertyWatcher};
+use dyn_properties::{DynProperties, PropertyWatcher, Toml};
 use std::io::Write;
 use std::time::Duration;
 use tracing_test::traced_test;
@@ -15,7 +15,7 @@ async fn start_loads_initial_values() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
 
-    let watcher = PropertyWatcher::<AppConfig>::start(file.path(), Duration::from_secs(60))
+    let watcher = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_secs(60))
         .await
         .unwrap();
 
@@ -29,7 +29,7 @@ async fn start_fails_on_invalid_initial_file() {
     // rejected by `Validate`, not by TOML deserialization (see `Error::Validation`).
     writeln!(file, "port = 0").unwrap();
 
-    let result = PropertyWatcher::<AppConfig>::start(file.path(), Duration::from_secs(60)).await;
+    let result = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_secs(60)).await;
     match result {
         Err(dyn_properties::Error::Validation { .. }) => {}
         Err(other) => panic!("expected Error::Validation, got {other:?}"),
@@ -42,7 +42,7 @@ async fn reload_picks_up_valid_changes() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
 
-    let watcher = PropertyWatcher::<AppConfig>::start(file.path(), Duration::from_millis(50))
+    let watcher = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50))
         .await
         .unwrap();
     assert_eq!(watcher.load().port, 9000);
@@ -59,7 +59,7 @@ async fn reload_keeps_last_good_value_on_invalid_change_and_logs() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
 
-    let watcher = PropertyWatcher::<AppConfig>::start(file.path(), Duration::from_millis(50))
+    let watcher = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50))
         .await
         .unwrap();
 
@@ -96,7 +96,7 @@ async fn reload_survives_a_panic_inside_a_tick() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
 
-    let watcher = PropertyWatcher::<PanicProneConfig>::start(file.path(), Duration::from_millis(50))
+    let watcher = PropertyWatcher::<PanicProneConfig, Toml>::start(file.path(), Duration::from_millis(50))
         .await
         .unwrap();
     assert_eq!(watcher.load().port, 9000);
