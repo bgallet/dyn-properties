@@ -3,6 +3,7 @@ use serde::de::Error as _;
 use crate::Format;
 
 /// Parses config files as TOML. Requires the `toml` Cargo feature.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Toml;
 
 impl Format for Toml {

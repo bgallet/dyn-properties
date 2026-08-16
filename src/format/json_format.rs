@@ -1,6 +1,7 @@
 use crate::Format;
 
 /// Parses config files as JSON. Requires the `json` Cargo feature.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Json;
 
 impl Format for Json {

@@ -17,6 +17,12 @@ use crate::{Error, Format, Validate};
 /// A failed reload (I/O error, parse error, or a `Validate` bound violation) is logged
 /// via `tracing` and discarded, leaving the previously-loaded value in place. Dropping
 /// the watcher stops the background polling task.
+///
+/// Config files should be updated atomically (write to a temp file in the same
+/// directory, then rename over the target) rather than truncated in place — a poll
+/// tick that reads a mid-write, momentarily-empty file will parse and validate
+/// successfully as "everything defaulted" under this crate's default-overlay design,
+/// silently replacing good config rather than failing loudly.
 pub struct PropertyWatcher<T, F> {
     inner: Arc<ArcSwap<T>>,
     handle: JoinHandle<()>,
