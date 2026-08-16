@@ -21,6 +21,10 @@ tracing-test = { version = "0.2", features = ["no-env-filter"] }
 toml = ["dep:toml"]
 json = ["dep:serde_json"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [[test]]
 name = "deserialize"
 required-features = ["toml"]

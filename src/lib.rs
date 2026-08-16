@@ -1,4 +1,7 @@
-//! Reads a TOML file into a validated, hot-reloadable struct.
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+
+//! Reads a config file — TOML, JSON, or your own [`Format`] — into a validated,
+//! hot-reloadable struct.
 //!
 //! ```no_run
 //! # #[cfg(feature = "toml")]
@@ -61,6 +64,17 @@
 //!
 //! assert!(AppConfig::default().validate().is_ok());
 //! ```
+//!
+//! ## Cargo features
+//!
+//! Neither format is enabled by default — enable exactly the one(s) you need:
+//!
+//! - `toml` — adds [`Toml`], parsing config files as TOML.
+//! - `json` — adds [`Json`], parsing config files as JSON.
+//!
+//! Both can be enabled together. With neither enabled, [`Format`] itself is still
+//! available — implement it for your own format (YAML, RON, ...) and use
+//! `PropertyWatcher<T, YourFormat>` without depending on `toml` or `serde_json` at all.
 
 pub use dyn_properties_derive::DynProperties;
 
