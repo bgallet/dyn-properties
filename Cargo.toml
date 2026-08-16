@@ -2,6 +2,9 @@
 name = "dyn-properties"
 version = "0.1.0"
 edition = "2024"
+description = "Reads a config file — TOML, JSON, or your own Format — into a validated, hot-reloadable struct."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bgallet/dyn-properties"
 
 [dependencies]
 dyn-properties-derive = { path = "dyn-properties-derive", version = "0.1.0" }

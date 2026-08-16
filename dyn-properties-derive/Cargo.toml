@@ -2,6 +2,9 @@
 name = "dyn-properties-derive"
 version = "0.1.0"
 edition = "2024"
+description = "Derive macro for dyn-properties."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bgallet/dyn-properties"
 
 [lib]
 proc-macro = true
