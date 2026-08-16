@@ -39,6 +39,7 @@ dependencies = [
  "arc-swap",
  "dyn-properties-derive",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "toml 0.8.23",
