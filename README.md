@@ -23,19 +23,19 @@ struct AppConfig {
     request_timeout: Duration,
 }
 
-async fn run() -> Result<(), dyn_properties::Error> {
+fn run() -> Result<(), dyn_properties::Error> {
     let watcher = PropertyWatcher::<AppConfig, Toml>::start(
         "config.toml",
         Duration::from_secs(30),
-    ).await?;
+    )?;
 
     // Short-lived, same-thread read:
     let port = watcher.load().port;
 
-    // Crossing an `.await` or moving to another task/thread: clone the Arc
+    // Passing the config to another thread or an async task: clone the Arc
     // out first.
     let cfg: Arc<AppConfig> = Arc::clone(&watcher.load());
-    some_async_fn(cfg).await;
+    some_other_fn(cfg);
     Ok(())
 }
 ```
