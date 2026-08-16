@@ -9,17 +9,20 @@
 /// (`src/duration.rs` in the `dyn-properties` crate) ever changes, this must change with
 /// it — both have unit tests covering the same cases.
 pub fn validate_duration_literal_syntax(s: &str) -> Result<(), String> {
-    let err = || {
-        format!("invalid duration string `{s}`: expected digits followed by one of ms, s, m, h, d")
-    };
-    let unit_start = s.find(|c: char| !c.is_ascii_digit()).ok_or_else(err)?;
+    let unit_start = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     let (digits, unit) = s.split_at(unit_start);
-    if digits.is_empty() || digits.parse::<u64>().is_err() {
-        return Err(err());
+    if digits.is_empty() {
+        return Err(format!("no digits in {s:?}"));
+    }
+    if unit.is_empty() {
+        return Err(format!("no unit in {s:?}"));
+    }
+    if digits.parse::<u64>().is_err() {
+        return Err(format!("number too large in {s:?}"));
     }
     match unit {
         "ms" | "s" | "m" | "h" | "d" => Ok(()),
-        _ => Err(err()),
+        _ => Err(format!("invalid unit {unit:?} in {s:?}")),
     }
 }
 
@@ -70,5 +73,50 @@ mod tests {
     #[test]
     fn rejects_empty_string() {
         assert!(validate_duration_literal_syntax("").is_err());
+    }
+
+    #[test]
+    fn error_message_for_missing_digits() {
+        assert_eq!(
+            validate_duration_literal_syntax("s").unwrap_err(),
+            "no digits in \"s\""
+        );
+    }
+
+    #[test]
+    fn error_message_for_negative_values() {
+        assert_eq!(
+            validate_duration_literal_syntax("-5s").unwrap_err(),
+            "no digits in \"-5s\""
+        );
+    }
+
+    #[test]
+    fn error_message_for_empty_string() {
+        assert_eq!(validate_duration_literal_syntax("").unwrap_err(), "no digits in \"\"");
+    }
+
+    #[test]
+    fn error_message_for_missing_unit() {
+        assert_eq!(
+            validate_duration_literal_syntax("30").unwrap_err(),
+            "no unit in \"30\""
+        );
+    }
+
+    #[test]
+    fn error_message_for_invalid_unit() {
+        assert_eq!(
+            validate_duration_literal_syntax("100xyz").unwrap_err(),
+            "invalid unit \"xyz\" in \"100xyz\""
+        );
+    }
+
+    #[test]
+    fn error_message_for_number_too_large() {
+        assert_eq!(
+            validate_duration_literal_syntax("99999999999999999999s").unwrap_err(),
+            "number too large in \"99999999999999999999s\""
+        );
     }
 }

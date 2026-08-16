@@ -19,36 +19,48 @@ use serde::Deserialize;
 /// `d` (days). No sign, decimal point, or whitespace is allowed (e.g. `"100ms"`, `"30s"`,
 /// `"5m"`, `"2h"`, `"1d"`).
 pub fn parse_duration(s: &str) -> Result<Duration, ParseDurationError> {
-    let unit_start = s
-        .find(|c: char| !c.is_ascii_digit())
-        .ok_or_else(|| ParseDurationError(s.to_string()))?;
+    let unit_start = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     let (digits, unit) = s.split_at(unit_start);
     if digits.is_empty() {
-        return Err(ParseDurationError(s.to_string()));
+        return Err(ParseDurationError::NoDigits(s.to_string()));
     }
-    let value: u64 = digits.parse().map_err(|_| ParseDurationError(s.to_string()))?;
+    if unit.is_empty() {
+        return Err(ParseDurationError::NoUnit(s.to_string()));
+    }
+    let value: u64 = digits
+        .parse()
+        .map_err(|_| ParseDurationError::NumberTooLarge(s.to_string()))?;
     match unit {
         "ms" => Ok(Duration::from_millis(value)),
         "s" => Ok(Duration::from_secs(value)),
         "m" => Ok(Duration::from_secs(value * 60)),
         "h" => Ok(Duration::from_secs(value * 3600)),
         "d" => Ok(Duration::from_secs(value * 86400)),
-        _ => Err(ParseDurationError(s.to_string())),
+        _ => Err(ParseDurationError::InvalidUnit {
+            unit: unit.to_string(),
+            input: s.to_string(),
+        }),
     }
 }
 
 /// The string failed to parse as a duration: it wasn't `<digits>` followed by one of
 /// `ms`, `s`, `m`, `h`, `d`.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ParseDurationError(String);
+pub enum ParseDurationError {
+    NoDigits(String),
+    NoUnit(String),
+    InvalidUnit { unit: String, input: String },
+    NumberTooLarge(String),
+}
 
 impl fmt::Display for ParseDurationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "invalid duration string `{}`: expected digits followed by one of ms, s, m, h, d",
-            self.0
-        )
+        match self {
+            Self::NoDigits(input) => write!(f, "no digits in {input:?}"),
+            Self::NoUnit(input) => write!(f, "no unit in {input:?}"),
+            Self::InvalidUnit { unit, input } => write!(f, "invalid unit {unit:?} in {input:?}"),
+            Self::NumberTooLarge(input) => write!(f, "number too large in {input:?}"),
+        }
     }
 }
 
@@ -119,5 +131,41 @@ mod tests {
     #[test]
     fn rejects_empty_string() {
         assert!(parse_duration("").is_err());
+    }
+
+    #[test]
+    fn error_message_for_missing_digits() {
+        assert_eq!(parse_duration("s").unwrap_err().to_string(), "no digits in \"s\"");
+    }
+
+    #[test]
+    fn error_message_for_negative_values() {
+        assert_eq!(parse_duration("-5s").unwrap_err().to_string(), "no digits in \"-5s\"");
+    }
+
+    #[test]
+    fn error_message_for_empty_string() {
+        assert_eq!(parse_duration("").unwrap_err().to_string(), "no digits in \"\"");
+    }
+
+    #[test]
+    fn error_message_for_missing_unit() {
+        assert_eq!(parse_duration("30").unwrap_err().to_string(), "no unit in \"30\"");
+    }
+
+    #[test]
+    fn error_message_for_invalid_unit() {
+        assert_eq!(
+            parse_duration("100xyz").unwrap_err().to_string(),
+            "invalid unit \"xyz\" in \"100xyz\""
+        );
+    }
+
+    #[test]
+    fn error_message_for_number_too_large() {
+        assert_eq!(
+            parse_duration("99999999999999999999s").unwrap_err().to_string(),
+            "number too large in \"99999999999999999999s\""
+        );
     }
 }
