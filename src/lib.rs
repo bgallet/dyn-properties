@@ -96,7 +96,7 @@ pub use error::Error;
 pub use validate::Validate;
 
 mod watcher;
-pub use watcher::PropertyWatcher;
+pub use watcher::{ChangeSubscription, PropertyWatcher};
 
 pub mod exports {
     pub use serde;
