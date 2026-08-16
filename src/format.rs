@@ -19,3 +19,8 @@ pub trait Format {
 mod toml_format;
 #[cfg(feature = "toml")]
 pub use toml_format::Toml;
+
+#[cfg(feature = "json")]
+mod json_format;
+#[cfg(feature = "json")]
+pub use json_format::Json;

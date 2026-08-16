@@ -73,6 +73,8 @@ mod format;
 pub use format::Format;
 #[cfg(feature = "toml")]
 pub use format::Toml;
+#[cfg(feature = "json")]
+pub use format::Json;
 
 mod error;
 mod validate;
