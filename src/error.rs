@@ -1,13 +1,15 @@
 use std::fmt;
 
 /// Everything that can go wrong loading and validating a config file: reading it,
-/// parsing it as TOML, or checking it against `#[range]`/`#[len]` bounds.
+/// parsing it (in whichever [`Format`](crate::Format) was selected), or checking it
+/// against `#[range]`/`#[len]` bounds.
 #[derive(Debug)]
 pub enum Error {
     /// The config file could not be read (e.g. it doesn't exist or isn't readable).
     Io(std::io::Error),
-    /// The file's contents are not valid TOML, or don't match the target struct's shape.
-    TomlParse(toml::de::Error),
+    /// The file's contents didn't parse under the selected format, or didn't match the
+    /// target struct's shape.
+    Parse(Box<dyn std::error::Error + Send + Sync>),
     /// The file parsed fine but a field violated its declared bound.
     Validation {
         /// Dot-separated path to the offending field, e.g. `"pool.idle_timeout"` for a
@@ -39,7 +41,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Io(e) => write!(f, "I/O error: {e}"),
-            Error::TomlParse(e) => write!(f, "TOML parse error: {e}"),
+            Error::Parse(e) => write!(f, "parse error: {e}"),
             Error::Validation { field_path, reason } => write!(f, "{field_path}: {reason}"),
         }
     }
@@ -49,7 +51,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Io(e) => Some(e),
-            Error::TomlParse(e) => Some(e),
+            Error::Parse(e) => Some(e.as_ref()),
             Error::Validation { .. } => None,
         }
     }
@@ -58,12 +60,6 @@ impl std::error::Error for Error {
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Error::Io(e)
-    }
-}
-
-impl From<toml::de::Error> for Error {
-    fn from(e: toml::de::Error) -> Self {
-        Error::TomlParse(e)
     }
 }
 
@@ -86,9 +82,9 @@ mod tests {
 
     #[test]
     fn prefixed_leaves_non_validation_variants_unchanged() {
-        let parse_err = toml::from_str::<toml::Value>("not valid = [").unwrap_err();
-        let err = Error::TomlParse(parse_err);
+        let parse_err = "abc".parse::<i32>().unwrap_err();
+        let err = Error::Parse(Box::new(parse_err));
         let prefixed = err.prefixed("pool");
-        assert!(matches!(prefixed, Error::TomlParse(_)));
+        assert!(matches!(prefixed, Error::Parse(_)));
     }
 }
