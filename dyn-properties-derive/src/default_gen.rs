@@ -42,7 +42,7 @@ fn field_default(field: &ParsedField) -> TokenStream {
         FieldKind::Duration => quote_spanned! {span=>
             {
                 let v: &str = #expr;
-                <dyn_properties::Duration as ::std::str::FromStr>::from_str(v)
+                dyn_properties::parse_duration(v)
                     .expect(&::std::format!("invalid #[default] duration literal on field `{}`", #field_name))
             }
         },

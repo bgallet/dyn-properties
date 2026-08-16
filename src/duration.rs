@@ -1,42 +1,43 @@
 use std::fmt;
-use std::ops::Deref;
-use std::str::FromStr;
-use std::time::Duration as StdDuration;
+use std::time::Duration;
 
-/// A [`std::time::Duration`] that (de)serializes from a compact string like `"30s"`
-/// instead of TOML's native table/seconds representation, and that fields bounded with
-/// `#[range(min = "...", max = "...")]` (min/max as duration strings) must use.
+use serde::Deserialize;
+
+/// Parses a compact duration string like `"30s"` into a [`std::time::Duration`].
+///
+/// [`std::time::Duration`] has no [`FromStr`](std::str::FromStr) impl of its own, and TOML
+/// represents durations as this compact string rather than a table or a raw seconds count,
+/// so any field typed `std::time::Duration` and bounded with
+/// `#[range(min = "...", max = "...")]` (min/max as duration strings) routes through this
+/// parser — the derive macro wires it in automatically, both for `#[default("...")]`
+/// literals and for deserializing the field itself, so callers don't need to call it
+/// directly except to parse a duration string outside of a `#[derive(DynProperties)]`
+/// struct.
 ///
 /// String grammar: `<digits><unit>`, where `<digits>` is one or more ASCII digits and
 /// `<unit>` is one of `ms` (milliseconds), `s` (seconds), `m` (minutes), `h` (hours), or
 /// `d` (days). No sign, decimal point, or whitespace is allowed (e.g. `"100ms"`, `"30s"`,
-/// `"5m"`, `"2h"`, `"1d"`). Parsing is exposed via [`FromStr`] and via [`serde::Deserialize`].
-///
-/// Derefs to `std::time::Duration` for comparisons and other standard operations.
-///
-/// Deliberately does **not** implement [`Default`]: a silent zero-duration is rarely the
-/// right fallback for a timeout or interval. Every plain `Duration` field on a
-/// `#[derive(DynProperties)]` struct must carry an explicit `#[default("...")]` attribute
-/// — the derive macro rejects one that doesn't, at compile time. If "unset" is a
-/// meaningful state for a field, use `Option<Duration>` instead, which defaults to `None`
-/// without needing an explicit `#[default(..)]`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Duration(StdDuration);
-
-impl Deref for Duration {
-    type Target = StdDuration;
-    fn deref(&self) -> &StdDuration {
-        &self.0
+/// `"5m"`, `"2h"`, `"1d"`).
+pub fn parse_duration(s: &str) -> Result<Duration, ParseDurationError> {
+    let unit_start = s
+        .find(|c: char| !c.is_ascii_digit())
+        .ok_or_else(|| ParseDurationError(s.to_string()))?;
+    let (digits, unit) = s.split_at(unit_start);
+    if digits.is_empty() {
+        return Err(ParseDurationError(s.to_string()));
+    }
+    let value: u64 = digits.parse().map_err(|_| ParseDurationError(s.to_string()))?;
+    match unit {
+        "ms" => Ok(Duration::from_millis(value)),
+        "s" => Ok(Duration::from_secs(value)),
+        "m" => Ok(Duration::from_secs(value * 60)),
+        "h" => Ok(Duration::from_secs(value * 3600)),
+        "d" => Ok(Duration::from_secs(value * 86400)),
+        _ => Err(ParseDurationError(s.to_string())),
     }
 }
 
-impl fmt::Display for Duration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-/// The string failed to parse as a [`Duration`]: it wasn't `<digits>` followed by one of
+/// The string failed to parse as a duration: it wasn't `<digits>` followed by one of
 /// `ms`, `s`, `m`, `h`, `d`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseDurationError(String);
@@ -53,38 +54,19 @@ impl fmt::Display for ParseDurationError {
 
 impl std::error::Error for ParseDurationError {}
 
-impl FromStr for Duration {
-    type Err = ParseDurationError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let unit_start = s
-            .find(|c: char| !c.is_ascii_digit())
-            .ok_or_else(|| ParseDurationError(s.to_string()))?;
-        let (digits, unit) = s.split_at(unit_start);
-        if digits.is_empty() {
-            return Err(ParseDurationError(s.to_string()));
-        }
-        let value: u64 = digits.parse().map_err(|_| ParseDurationError(s.to_string()))?;
-        let std_duration = match unit {
-            "ms" => StdDuration::from_millis(value),
-            "s" => StdDuration::from_secs(value),
-            "m" => StdDuration::from_secs(value * 60),
-            "h" => StdDuration::from_secs(value * 3600),
-            "d" => StdDuration::from_secs(value * 86400),
-            _ => return Err(ParseDurationError(s.to_string())),
-        };
-        Ok(Duration(std_duration))
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for Duration {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        s.parse().map_err(serde::de::Error::custom)
-    }
+/// Deserializes a `std::time::Duration`-typed field from its compact string form,
+/// returning `Option<Duration>` to match the internal helper-struct representation the
+/// derive macro uses for every bounded/defaulted field (including ones whose declared
+/// type is already `Option<Duration>` — see the design doc's default-overlay mechanism).
+/// Not meant to be called directly; wired in by the derive macro via
+/// `#[serde(deserialize_with = "...")]` on `Duration`-kind fields.
+#[doc(hidden)]
+pub fn deserialize_duration_option<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    parse_duration(&s).map(Some).map_err(serde::de::Error::custom)
 }
 
 #[cfg(test)]
@@ -93,46 +75,46 @@ mod tests {
 
     #[test]
     fn parses_milliseconds() {
-        assert_eq!("100ms".parse::<Duration>().unwrap().0, StdDuration::from_millis(100));
+        assert_eq!(parse_duration("100ms").unwrap(), Duration::from_millis(100));
     }
 
     #[test]
     fn parses_seconds() {
-        assert_eq!("30s".parse::<Duration>().unwrap().0, StdDuration::from_secs(30));
+        assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
     }
 
     #[test]
     fn parses_minutes() {
-        assert_eq!("5m".parse::<Duration>().unwrap().0, StdDuration::from_secs(300));
+        assert_eq!(parse_duration("5m").unwrap(), Duration::from_secs(300));
     }
 
     #[test]
     fn parses_hours() {
-        assert_eq!("2h".parse::<Duration>().unwrap().0, StdDuration::from_secs(7200));
+        assert_eq!(parse_duration("2h").unwrap(), Duration::from_secs(7200));
     }
 
     #[test]
     fn parses_days() {
-        assert_eq!("1d".parse::<Duration>().unwrap().0, StdDuration::from_secs(86400));
+        assert_eq!(parse_duration("1d").unwrap(), Duration::from_secs(86400));
     }
 
     #[test]
     fn rejects_invalid_suffix() {
-        assert!("100xyz".parse::<Duration>().is_err());
+        assert!(parse_duration("100xyz").is_err());
     }
 
     #[test]
     fn rejects_missing_digits() {
-        assert!("s".parse::<Duration>().is_err());
+        assert!(parse_duration("s").is_err());
     }
 
     #[test]
     fn rejects_negative_values() {
-        assert!("-5s".parse::<Duration>().is_err());
+        assert!(parse_duration("-5s").is_err());
     }
 
     #[test]
     fn rejects_empty_string() {
-        assert!("".parse::<Duration>().is_err());
+        assert!(parse_duration("").is_err());
     }
 }

@@ -1,8 +1,9 @@
 //! Reads a TOML file into a validated, hot-reloadable struct.
 //!
 //! ```no_run
-//! use dyn_properties::{DynProperties, Duration, PropertyWatcher};
+//! use dyn_properties::{DynProperties, PropertyWatcher};
 //! use std::sync::Arc;
+//! use std::time::Duration;
 //!
 //! #[derive(DynProperties)]
 //! struct AppConfig {
@@ -22,7 +23,7 @@
 //! # async fn run() -> Result<(), dyn_properties::Error> {
 //! let watcher = PropertyWatcher::<AppConfig>::start(
 //!     "config.toml",
-//!     std::time::Duration::from_secs(30),
+//!     Duration::from_secs(30),
 //! ).await?;
 //!
 //! // Short-lived, same-thread read:
@@ -61,7 +62,9 @@
 pub use dyn_properties_derive::DynProperties;
 
 mod duration;
-pub use duration::{Duration, ParseDurationError};
+pub use duration::{parse_duration, ParseDurationError};
+#[doc(hidden)]
+pub use duration::deserialize_duration_option;
 
 mod error;
 mod validate;

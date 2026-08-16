@@ -38,14 +38,34 @@ fn helper_field(field: &ParsedField) -> TokenStream {
     let ident = &field.ident;
     let ty = &field.field.ty;
     let span = field.field.span();
+
+    // `std::time::Duration` has no `Deserialize` impl of its own (see `src/duration.rs`),
+    // so Duration-kind fields (bare or `Option`-wrapped — both end up as `Option<Duration>`
+    // in the helper, see below) need an explicit deserializer wired in. Every other kind
+    // (String, numeric, nested derived structs) already implements `Deserialize` and needs
+    // nothing extra here.
+    let effective_kind = match &field.kind {
+        FieldKind::Option(inner) => inner.as_ref(),
+        other => other,
+    };
+    let deserialize_with = if matches!(effective_kind, FieldKind::Duration) {
+        quote_spanned! {span=>
+            #[serde(deserialize_with = "dyn_properties::deserialize_duration_option")]
+        }
+    } else {
+        TokenStream::new()
+    };
+
     if matches!(field.kind, FieldKind::Option(_)) {
         quote_spanned! {span=>
             #[serde(default)]
+            #deserialize_with
             #ident: #ty,
         }
     } else {
         quote_spanned! {span=>
             #[serde(default)]
+            #deserialize_with
             #ident: ::std::option::Option<#ty>,
         }
     }

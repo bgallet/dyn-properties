@@ -1,4 +1,5 @@
-use dyn_properties::{DynProperties, Duration, Validate};
+use dyn_properties::{DynProperties, Validate};
+use std::time::Duration;
 
 #[derive(DynProperties)]
 struct PoolConfig {
@@ -28,7 +29,7 @@ fn valid_config() -> DbConfig {
     DbConfig {
         host: "localhost".to_string(),
         port: 5432,
-        connect_timeout: "5s".parse().unwrap(),
+        connect_timeout: dyn_properties::parse_duration("5s").unwrap(),
         max_conns: Some(10),
         pool: PoolConfig { idle: 5 },
     }
@@ -44,7 +45,7 @@ fn boundary_values_pass() {
     let mut cfg = valid_config();
     cfg.port = 65535;
     cfg.host = "a".repeat(64);
-    cfg.connect_timeout = "30s".parse().unwrap();
+    cfg.connect_timeout = dyn_properties::parse_duration("30s").unwrap();
     assert!(cfg.validate().is_ok());
 }
 
@@ -69,7 +70,7 @@ fn string_too_short_fails() {
 #[test]
 fn duration_out_of_range_fails() {
     let mut cfg = valid_config();
-    cfg.connect_timeout = "1h".parse().unwrap();
+    cfg.connect_timeout = dyn_properties::parse_duration("1h").unwrap();
     assert!(cfg.validate().is_err());
 }
 

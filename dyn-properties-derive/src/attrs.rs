@@ -3,8 +3,9 @@ use syn::{Attribute, Error, Expr, Result};
 pub enum Bound {
     /// A value-comparison bound: `self.field < min || self.field > max`. Used for both
     /// numeric fields (min/max are numeric literals) and `Duration` fields (min/max are
-    /// string literals parsed via `Duration::from_str`) — which comparison applies is
-    /// decided later, from the field's own `FieldKind`, not from the attribute name.
+    /// string literals parsed via `dyn_properties::parse_duration`) — which comparison
+    /// applies is decided later, from the field's own `FieldKind`, not from the attribute
+    /// name.
     Range { min: Expr, max: Expr },
     /// A length-comparison bound: `self.field.len() < min || self.field.len() > max`.
     /// Used for `String` fields. Kept separate from `Range` since it measures a derived

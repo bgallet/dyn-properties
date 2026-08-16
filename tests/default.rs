@@ -22,7 +22,7 @@ struct DbConfig {
 
     #[range(min = "100ms", max = "30s")]
     #[default("5s")]
-    connect_timeout: dyn_properties::Duration,
+    connect_timeout: std::time::Duration,
 
     #[range(min = 1, max = 100)]
     max_conns: u32,
@@ -40,7 +40,7 @@ fn default_uses_attribute_values() {
     let cfg = DbConfig::default();
     assert_eq!(cfg.host, "localhost");
     assert_eq!(cfg.port, 5432);
-    assert_eq!(*cfg.connect_timeout, std::time::Duration::from_secs(5));
+    assert_eq!(cfg.connect_timeout, std::time::Duration::from_secs(5));
 }
 
 #[test]

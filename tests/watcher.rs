@@ -87,7 +87,7 @@ struct PanicProneConfig {
     port: u16,
 
     #[range(min = "not-a-duration", max = "1h")]
-    grace_period: Option<dyn_properties::Duration>,
+    grace_period: Option<Duration>,
 }
 
 #[tokio::test]
