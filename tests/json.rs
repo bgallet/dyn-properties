@@ -1,4 +1,5 @@
 use dyn_properties::{DynProperties, Json, Format};
+use std::time::Duration;
 
 #[derive(DynProperties)]
 struct PoolConfig {
@@ -24,6 +25,24 @@ struct DbConfig {
     pool: PoolConfig,
 
     description: Option<String>,
+}
+
+#[derive(DynProperties)]
+struct TimeoutConfig {
+    #[range(min = "100ms", max = "1h")]
+    grace_period: Option<Duration>,
+}
+
+#[test]
+fn null_option_duration_becomes_none() {
+    let cfg: TimeoutConfig = Json::parse(br#"{"grace_period": null}"#).unwrap();
+    assert_eq!(cfg.grace_period, None);
+}
+
+#[test]
+fn present_option_duration_still_parses() {
+    let cfg: TimeoutConfig = Json::parse(br#"{"grace_period": "5s"}"#).unwrap();
+    assert_eq!(cfg.grace_period, Some(Duration::from_secs(5)));
 }
 
 #[test]

@@ -65,8 +65,11 @@ pub fn deserialize_duration_option<'de, D>(deserializer: D) -> Result<Option<Dur
 where
     D: serde::Deserializer<'de>,
 {
-    let s = String::deserialize(deserializer)?;
-    parse_duration(&s).map(Some).map_err(serde::de::Error::custom)
+    let value: Option<String> = Option::deserialize(deserializer)?;
+    match value {
+        Some(s) => parse_duration(&s).map(Some).map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
