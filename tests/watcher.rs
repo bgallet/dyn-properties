@@ -38,6 +38,19 @@ async fn start_fails_on_invalid_initial_file() {
 }
 
 #[tokio::test]
+async fn start_fails_with_error_parse_on_unparseable_file() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "not valid = [").unwrap();
+
+    let result = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_secs(60)).await;
+    match result {
+        Err(dyn_properties::Error::Parse(_)) => {}
+        Err(other) => panic!("expected Error::Parse, got {other:?}"),
+        Ok(_) => panic!("expected start() to fail on unparseable TOML"),
+    }
+}
+
+#[tokio::test]
 async fn reload_picks_up_valid_changes() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
