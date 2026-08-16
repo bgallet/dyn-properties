@@ -25,25 +25,25 @@
 //!     request_timeout: Duration,
 //! }
 //!
-//! # async fn run() -> Result<(), dyn_properties::Error> {
+//! # fn run() -> Result<(), dyn_properties::Error> {
 //! let watcher = PropertyWatcher::<AppConfig, Toml>::start(
 //!     "config.toml",
 //!     Duration::from_secs(30),
-//! ).await?;
+//! )?;
 //!
 //! // Short-lived, same-thread read:
 //! let port = watcher.load().port;
 //!
-//! // Crossing an `.await` or moving to another task/thread: clone the Arc
+//! // Passing the config to another thread or an async task: clone the Arc
 //! // out first. arc-swap documents that Guards use a bounded pool of
-//! // fast thread-local slots and aren't meant to be held across yield
-//! // points.
+//! // fast thread-local slots and aren't meant to be held long-term or
+//! // moved across threads.
 //! let cfg: Arc<AppConfig> = Arc::clone(&watcher.load());
-//! some_async_fn(cfg).await;
+//! some_other_fn(cfg);
 //! # let _ = port;
 //! # Ok(())
 //! # }
-//! # async fn some_async_fn(_cfg: Arc<AppConfig>) {}
+//! # fn some_other_fn(_cfg: Arc<AppConfig>) {}
 //! # }
 //! ```
 //!

@@ -84,14 +84,12 @@ struct Cfg {
     count: u32,
 }
 
-#[tokio::test]
-async fn watcher_works_with_a_caller_defined_format() {
+#[test]
+fn watcher_works_with_a_caller_defined_format() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     write!(file, "42").unwrap();
 
-    let watcher = PropertyWatcher::<Cfg, PlainNumber>::start(file.path(), Duration::from_secs(60))
-        .await
-        .unwrap();
+    let watcher = PropertyWatcher::<Cfg, PlainNumber>::start(file.path(), Duration::from_secs(60)).unwrap();
 
     assert_eq!(watcher.load().count, 42);
 }
