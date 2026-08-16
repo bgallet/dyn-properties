@@ -6,6 +6,7 @@ use syn::{parse_macro_input, Data, DeriveInput, Error, Fields, Result};
 mod attrs;
 mod default_gen;
 mod deserialize_gen;
+mod duration_syntax;
 mod type_kind;
 mod validate_gen;
 
@@ -51,8 +52,10 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
         let field_attrs = attrs::parse_field_attrs(&field.attrs)?;
         if let Some(bound) = &field_attrs.bound {
             check_bound_compatibility(bound, &kind, &field_ident)?;
+            check_duration_bound_literal_syntax(bound, &kind)?;
         }
         check_duration_has_default(&kind, &field_attrs.default, &field_ident)?;
+        check_duration_default_literal_syntax(&field_attrs.default, &kind)?;
         parsed_fields.push(ParsedField {
             field,
             ident: field_ident,
@@ -73,11 +76,19 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
     })
 }
 
-fn check_bound_compatibility(bound: &Bound, kind: &FieldKind, field_ident: &syn::Ident) -> Result<()> {
-    let effective_kind = match kind {
+/// A field's kind, with an `Option<T>` wrapper stripped down to `T` — the meaningful
+/// distinction for compatibility/literal checks that apply equally whether or not a
+/// field is optional (an `Option<Duration>` bound behaves the same as a bare `Duration`
+/// bound once the value is present).
+fn effective_kind(kind: &FieldKind) -> &FieldKind {
+    match kind {
         FieldKind::Option(inner) => inner.as_ref(),
         other => other,
-    };
+    }
+}
+
+fn check_bound_compatibility(bound: &Bound, kind: &FieldKind, field_ident: &syn::Ident) -> Result<()> {
+    let effective_kind = effective_kind(kind);
     let ok = matches!(
         (bound, effective_kind),
         (Bound::Range { .. }, FieldKind::Numeric)
@@ -116,4 +127,46 @@ fn check_duration_has_default(
     } else {
         Ok(())
     }
+}
+
+/// If `bound` is a `#[range(min=..,max=..)]` on a Duration-kind field (bare or
+/// `Option`-wrapped), requires `min`/`max` to be string literals with valid duration
+/// syntax — checked at macro-expansion time so a malformed literal is a compile error,
+/// not a panic the first time `validate()` happens to run.
+fn check_duration_bound_literal_syntax(bound: &Bound, kind: &FieldKind) -> Result<()> {
+    let Bound::Range { min, max } = bound else {
+        return Ok(());
+    };
+    if !matches!(effective_kind(kind), FieldKind::Duration) {
+        return Ok(());
+    }
+    check_duration_literal_expr(min)?;
+    check_duration_literal_expr(max)
+}
+
+/// If `default` is a `#[default("...")]` on a Duration-kind field (bare or
+/// `Option`-wrapped), requires it to be a string literal with valid duration syntax —
+/// checked at macro-expansion time for the same reason as bound literals above.
+fn check_duration_default_literal_syntax(default: &Option<syn::Expr>, kind: &FieldKind) -> Result<()> {
+    let Some(expr) = default else {
+        return Ok(());
+    };
+    if !matches!(effective_kind(kind), FieldKind::Duration) {
+        return Ok(());
+    }
+    check_duration_literal_expr(expr)
+}
+
+fn check_duration_literal_expr(expr: &syn::Expr) -> Result<()> {
+    let syn::Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Str(lit_str),
+        ..
+    }) = expr
+    else {
+        return Err(Error::new_spanned(
+            expr,
+            "Duration bounds and defaults must be string literals (e.g. \"30s\"), so they can be validated at compile time",
+        ));
+    };
+    duration_syntax::validate_duration_literal_syntax(&lit_str.value()).map_err(|msg| Error::new_spanned(lit_str, msg))
 }

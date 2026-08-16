@@ -53,8 +53,7 @@ where
             loop {
                 ticker.tick().await;
                 // Run each tick's load-and-validate in its own task so a panic inside it
-                // (e.g. a malformed #[range] literal only forced once a
-                // previously-`None` Option<Duration> field first becomes `Some`) is
+                // (e.g. a bug in a caller-defined `Format::parse` implementation) is
                 // caught as a `JoinError` here instead of unwinding this loop's task and
                 // silently ending all future reloads.
                 let tick_path = watch_path.clone();

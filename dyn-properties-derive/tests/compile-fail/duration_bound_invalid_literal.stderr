@@ -1,0 +1,5 @@
+error: invalid duration string `not-a-duration`: expected digits followed by one of ms, s, m, h, d
+  --> tests/compile-fail/duration_bound_invalid_literal.rs:12:19
+   |
+12 |     #[range(min = "not-a-duration", max = "1h")]
+   |                   ^^^^^^^^^^^^^^^^

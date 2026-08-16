@@ -1,0 +1,5 @@
+error: Duration bounds and defaults must be string literals (e.g. "30s"), so they can be validated at compile time
+  --> tests/compile-fail/duration_bound_non_literal.rs:14:19
+   |
+14 |     #[range(min = MIN, max = "1h")]
+   |                   ^^^
