@@ -1,4 +1,4 @@
-use dyn_properties::{DynProperties, Json, Format};
+use dyn_properties::{DynProperties, Format, Json};
 use std::time::Duration;
 use tracing_test::traced_test;
 

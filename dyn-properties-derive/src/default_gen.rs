@@ -2,8 +2,8 @@ use proc_macro2::TokenStream;
 use quote::quote_spanned;
 use syn::spanned::Spanned;
 
-use crate::type_kind::FieldKind;
 use crate::ParsedField;
+use crate::type_kind::FieldKind;
 
 pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream {
     let assignments: Vec<TokenStream> = fields.iter().map(field_default).collect();
@@ -47,7 +47,9 @@ fn field_default(field: &ParsedField) -> TokenStream {
             }
         },
         FieldKind::Nested => quote_spanned! {span=> #expr },
-        FieldKind::Option(_) => unreachable!("Option<Option<T>> is rejected during type classification"),
+        FieldKind::Option(_) => {
+            unreachable!("Option<Option<T>> is rejected during type classification")
+        }
     };
 
     if matches!(field.kind, FieldKind::Option(_)) {

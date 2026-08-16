@@ -15,7 +15,8 @@ fn start_loads_initial_values() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
 
-    let watcher = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_secs(60)).unwrap();
+    let watcher =
+        PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_secs(60)).unwrap();
 
     assert_eq!(watcher.load().port, 9000);
 }
@@ -53,7 +54,8 @@ fn reload_picks_up_valid_changes() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
 
-    let watcher = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
+    let watcher =
+        PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
     assert_eq!(watcher.load().port, 9000);
 
     std::fs::write(file.path(), "port = 9500").unwrap();
@@ -68,7 +70,8 @@ fn reload_keeps_last_good_value_on_invalid_change_and_logs() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "port = 9000").unwrap();
 
-    let watcher = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
+    let watcher =
+        PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
 
     // Parses fine as a u16 but violates #[range(min = 1, max = 65535)]; this must be
     // rejected by `Validate` during the reload tick, not by TOML deserialization.

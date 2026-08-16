@@ -79,7 +79,9 @@ where
 {
     let value: Option<String> = Option::deserialize(deserializer)?;
     match value {
-        Some(s) => parse_duration(&s).map(Some).map_err(serde::de::Error::custom),
+        Some(s) => parse_duration(&s)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
         None => Ok(None),
     }
 }
@@ -135,22 +137,34 @@ mod tests {
 
     #[test]
     fn error_message_for_missing_digits() {
-        assert_eq!(parse_duration("s").unwrap_err().to_string(), "no digits in \"s\"");
+        assert_eq!(
+            parse_duration("s").unwrap_err().to_string(),
+            "no digits in \"s\""
+        );
     }
 
     #[test]
     fn error_message_for_negative_values() {
-        assert_eq!(parse_duration("-5s").unwrap_err().to_string(), "no digits in \"-5s\"");
+        assert_eq!(
+            parse_duration("-5s").unwrap_err().to_string(),
+            "no digits in \"-5s\""
+        );
     }
 
     #[test]
     fn error_message_for_empty_string() {
-        assert_eq!(parse_duration("").unwrap_err().to_string(), "no digits in \"\"");
+        assert_eq!(
+            parse_duration("").unwrap_err().to_string(),
+            "no digits in \"\""
+        );
     }
 
     #[test]
     fn error_message_for_missing_unit() {
-        assert_eq!(parse_duration("30").unwrap_err().to_string(), "no unit in \"30\"");
+        assert_eq!(
+            parse_duration("30").unwrap_err().to_string(),
+            "no unit in \"30\""
+        );
     }
 
     #[test]
@@ -164,7 +178,9 @@ mod tests {
     #[test]
     fn error_message_for_number_too_large() {
         assert_eq!(
-            parse_duration("99999999999999999999s").unwrap_err().to_string(),
+            parse_duration("99999999999999999999s")
+                .unwrap_err()
+                .to_string(),
             "number too large in \"99999999999999999999s\""
         );
     }

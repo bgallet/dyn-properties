@@ -19,12 +19,16 @@ impl FieldKind {
 }
 
 const NUMERIC_TYPES: &[&str] = &[
-    "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64",
+    "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32",
+    "f64",
 ];
 
 pub fn classify(ty: &Type) -> Result<FieldKind> {
     let Type::Path(type_path) = ty else {
-        return Err(Error::new_spanned(ty, "unsupported field type: expected a path type"));
+        return Err(Error::new_spanned(
+            ty,
+            "unsupported field type: expected a path type",
+        ));
     };
     let segment = type_path
         .path
@@ -38,7 +42,10 @@ pub fn classify(ty: &Type) -> Result<FieldKind> {
             .ok_or_else(|| Error::new_spanned(ty, "Option must have exactly one type argument"))?;
         let inner_kind = classify(inner_ty)?;
         if matches!(inner_kind, FieldKind::Option(_)) {
-            return Err(Error::new_spanned(ty, "nested Option<Option<T>> is not supported"));
+            return Err(Error::new_spanned(
+                ty,
+                "nested Option<Option<T>> is not supported",
+            ));
         }
         return Ok(FieldKind::Option(Box::new(inner_kind)));
     }

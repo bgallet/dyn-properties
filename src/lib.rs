@@ -79,16 +79,16 @@
 pub use dyn_properties_derive::DynProperties;
 
 mod duration;
-pub use duration::{parse_duration, ParseDurationError};
 #[doc(hidden)]
 pub use duration::deserialize_duration_option;
+pub use duration::{ParseDurationError, parse_duration};
 
 mod format;
 pub use format::Format;
-#[cfg(feature = "toml")]
-pub use format::Toml;
 #[cfg(feature = "json")]
 pub use format::Json;
+#[cfg(feature = "toml")]
+pub use format::Toml;
 
 mod error;
 mod validate;

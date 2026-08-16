@@ -2,15 +2,16 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote_spanned};
 use syn::spanned::Spanned;
 
-use crate::type_kind::FieldKind;
 use crate::ParsedField;
+use crate::type_kind::FieldKind;
 
 pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream {
     let helper_name = format_ident!("__{}DynPropertiesHelper", struct_name);
     let struct_name_str = struct_name.to_string();
 
     let helper_fields: Vec<TokenStream> = fields.iter().map(|f| helper_field(f)).collect();
-    let overlay_assignments: Vec<TokenStream> = fields.iter().map(|f| overlay_assignment(f)).collect();
+    let overlay_assignments: Vec<TokenStream> =
+        fields.iter().map(|f| overlay_assignment(f)).collect();
 
     quote_spanned! {struct_name.span()=>
         impl<'de> dyn_properties::exports::serde::Deserialize<'de> for #struct_name {

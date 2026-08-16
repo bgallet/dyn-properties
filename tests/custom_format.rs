@@ -67,7 +67,8 @@ impl Format for PlainNumber {
     type Error = ValueError;
 
     fn parse<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, Self::Error> {
-        let text = std::str::from_utf8(bytes).map_err(|e| serde::de::Error::custom(e.to_string()))?;
+        let text =
+            std::str::from_utf8(bytes).map_err(|e| serde::de::Error::custom(e.to_string()))?;
         let value: u64 = text
             .trim()
             .parse()
@@ -89,7 +90,8 @@ fn watcher_works_with_a_caller_defined_format() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     write!(file, "42").unwrap();
 
-    let watcher = PropertyWatcher::<Cfg, PlainNumber>::start(file.path(), Duration::from_secs(60)).unwrap();
+    let watcher =
+        PropertyWatcher::<Cfg, PlainNumber>::start(file.path(), Duration::from_secs(60)).unwrap();
 
     assert_eq!(watcher.load().count, 42);
 }

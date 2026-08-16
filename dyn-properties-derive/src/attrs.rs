@@ -44,7 +44,10 @@ pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
     for attr in attrs {
         if attr.path().is_ident("range") || attr.path().is_ident("len") {
             if bound.is_some() {
-                return Err(Error::new_spanned(attr, "only one of #[range], #[len] is allowed per field"));
+                return Err(Error::new_spanned(
+                    attr,
+                    "only one of #[range], #[len] is allowed per field",
+                ));
             }
             let (min, max) = parse_min_max(attr)?;
             bound = Some(if attr.path().is_ident("range") {
