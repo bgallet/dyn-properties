@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use tracing::Instrument;
+
 use crate::watcher::parse_and_validate;
 use crate::{Error, Format, Validate};
 
@@ -46,45 +48,64 @@ where
 
         let watch_path = path.clone();
         let tx = watch_tx.clone();
-        let handle = ::tokio::spawn(async move {
-            let mut ticker = ::tokio::time::interval(interval);
-            ticker.tick().await; // first tick fires immediately; the initial load above already happened
-            let mut last_bytes = initial_bytes;
-            loop {
-                ticker.tick().await;
-                let bytes = match ::tokio::fs::read(&watch_path).await {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        tracing::warn!(
-                            path = %watch_path.display(),
-                            error = %Error::from(e),
-                            "dyn-properties: reload failed, keeping previous value"
-                        );
+        // `tokio::time::interval` panics on `Duration::ZERO`; constructing it here (in
+        // `start`'s own body, before the spawn) means that panic surfaces on the
+        // caller's stack instead of silently killing an unawaited `JoinHandle`, which
+        // would otherwise leave `start()` returning `Ok` for a watcher that never reloads.
+        let mut ticker = ::tokio::time::interval(interval);
+        // The threaded watcher's `std::thread::sleep`-based interval can only drift,
+        // never burst; match that here instead of tokio's default `Burst` behavior,
+        // which fires missed ticks back-to-back after a stalled runtime.
+        ticker.set_missed_tick_behavior(::tokio::time::MissedTickBehavior::Delay);
+        // Carries the caller's current tracing span onto the spawned task, so reload
+        // logs stay correlated with whatever context `start` was called from (a fresh
+        // task otherwise starts with no span of its own).
+        let span = tracing::Span::current();
+        let handle = ::tokio::spawn(
+            async move {
+                ticker.tick().await; // first tick fires immediately; the initial load above already happened
+                let mut last_bytes = initial_bytes;
+                loop {
+                    ticker.tick().await;
+                    let bytes = match ::tokio::fs::read(&watch_path).await {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            tracing::warn!(
+                                path = %watch_path.display(),
+                                error = %Error::from(e),
+                                "dyn-properties: reload failed, keeping previous value"
+                            );
+                            continue;
+                        }
+                    };
+                    if bytes == last_bytes {
                         continue;
                     }
-                };
-                if bytes == last_bytes {
-                    continue;
-                }
-                match parse_and_validate::<T, F>(&bytes) {
-                    Ok(value) => {
-                        // `send_replace` (unlike `send`) updates the stored value even
-                        // when there are currently zero live receivers — `load()` reads
-                        // through the `Sender` itself, so a caller that only ever calls
-                        // `load()` and never `subscribe()`s must still observe reloads.
-                        tx.send_replace(Arc::new(value));
+                    // The file's content did change: parse+validate it, and either way
+                    // (success or failure) treat this exact content as "already
+                    // handled" so a persistently-invalid-but-unchanging file doesn't
+                    // re-log every tick.
+                    match parse_and_validate::<T, F>(&bytes) {
+                        Ok(value) => {
+                            // `send_replace` (unlike `send`) updates the stored value even
+                            // when there are currently zero live receivers — `load()` reads
+                            // through the `Sender` itself, so a caller that only ever calls
+                            // `load()` and never `subscribe()`s must still observe reloads.
+                            tx.send_replace(Arc::new(value));
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                path = %watch_path.display(),
+                                error = %e,
+                                "dyn-properties: reload failed, keeping previous value"
+                            );
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            path = %watch_path.display(),
-                            error = %e,
-                            "dyn-properties: reload failed, keeping previous value"
-                        );
-                    }
+                    last_bytes = bytes;
                 }
-                last_bytes = bytes;
             }
-        });
+            .instrument(span),
+        );
 
         Ok(PropertyWatcher {
             watch_tx,
@@ -96,12 +117,10 @@ where
     /// Returns the current value.
     ///
     /// Unlike [`crate::PropertyWatcher::load`] (which returns an `arc_swap::Guard`),
-    /// this returns a `tokio::sync::watch::Ref`: the same "use and drop quickly, don't
-    /// hold across an `.await`" guidance applies. Clone the `Arc` out first
-    /// (`Arc::clone(&*watcher.load())`) to carry the value across an `.await` point or
-    /// into another task.
-    pub fn load(&self) -> ::tokio::sync::watch::Ref<'_, Arc<T>> {
-        self.watch_tx.borrow()
+    /// this returns an owned, cheap-to-clone `Arc<T>` — there's no guard to hold or
+    /// drop, so it's safe to hold across an `.await` point or move into another task.
+    pub fn load(&self) -> Arc<T> {
+        Arc::clone(&self.watch_tx.borrow())
     }
 
     /// Subscribes to future changes: returns tokio's own `watch::Receiver` directly, so
@@ -109,6 +128,9 @@ where
     /// the next update, `.borrow()`/`.borrow_and_update()` peek the current value.
     /// Coalescing: if several changes happen between two `.changed().await` calls, only
     /// the latest value is observed.
+    ///
+    /// Only *future* changes are delivered — subscribing doesn't replay the current
+    /// value; call [`load`](Self::load) for that.
     pub fn subscribe(&self) -> ::tokio::sync::watch::Receiver<Arc<T>> {
         self.watch_tx.subscribe()
     }

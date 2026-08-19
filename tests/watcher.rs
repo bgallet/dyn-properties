@@ -1,5 +1,7 @@
 use dyn_properties::{DynProperties, PropertyWatcher, Toml};
 use std::io::Write;
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 use tracing_test::traced_test;
 
@@ -240,13 +242,24 @@ fn dropping_the_watcher_ends_the_subscription() {
         PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
     let mut subscription = watcher.subscribe();
 
+    // Use the unbounded wait (not the timeout variant) on a separate thread, so this
+    // test genuinely exercises a *blocked* waiter observing `close()`'s
+    // `notify_all()` — the timeout variant collapses "closed" and "timed out" into
+    // the same `None`, so it would pass even if `close()` were entirely removed.
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = subscription.wait_for_change();
+        tx.send(result).unwrap();
+    });
+
+    // Give the spawned thread time to actually enter the blocking wait before we drop.
+    thread::sleep(Duration::from_millis(50));
+
     drop(watcher);
 
-    assert!(
-        subscription
-            .wait_for_change_timeout(Duration::from_secs(5))
-            .is_none()
-    );
+    // Bounded so a regression fails the test cleanly instead of hanging the suite.
+    let result = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(result.is_none());
 }
 
 #[tokio::test]

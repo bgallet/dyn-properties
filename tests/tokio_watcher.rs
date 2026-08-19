@@ -96,7 +96,10 @@ async fn subscribe_delivers_the_latest_value() {
     let mut rx = watcher.subscribe();
 
     std::fs::write(file.path(), "port = 9500").unwrap();
-    rx.changed().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), rx.changed())
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(rx.borrow().port, 9500);
 }
@@ -124,8 +127,32 @@ async fn subscribe_coalesces_multiple_changes() {
     // `subscriber_only_sees_the_latest_value_after_multiple_changes`.
     tokio::time::sleep(Duration::from_millis(150)).await;
 
-    rx.changed().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), rx.changed())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(rx.borrow().port, 9300);
+}
+
+#[tokio::test]
+async fn subscriber_gets_no_notification_for_a_byte_identical_rewrite() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    write!(file, "port = 9000").unwrap();
+
+    let watcher = PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50))
+        .await
+        .unwrap();
+    let mut rx = watcher.subscribe();
+
+    // Same bytes as the file already has; must not be treated as a change.
+    std::fs::write(file.path(), "port = 9000").unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), rx.changed())
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]

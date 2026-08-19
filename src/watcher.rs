@@ -165,6 +165,18 @@ where
     }
 }
 
+impl<T, F> Drop for PropertyWatcher<T, F> {
+    fn drop(&mut self) {
+        // Also closed from the background thread's stop-channel arm on a normal
+        // shutdown; this is a second, always-reliable trigger for the case where the
+        // reload thread instead ended via a panic (e.g. a bug in a caller-defined
+        // `Format::parse`/`Validate`), which would otherwise leave a subscriber blocked
+        // in `wait_for_change()` hanging forever, contradicting its doc-promised `None`
+        // once the watcher has been dropped.
+        self.notifier.close();
+    }
+}
+
 struct Notifier {
     state: Mutex<NotifierState>,
     condvar: Condvar,
@@ -236,8 +248,13 @@ impl<T> ChangeSubscription<T> {
     /// dropped" into the same `None`, same as `wait_for_change`'s "no more changes are
     /// coming" result).
     pub fn wait_for_change_timeout(&mut self, timeout: Duration) -> Option<Arc<T>> {
+        // `Instant::now() + timeout` panics if `timeout` is large enough to overflow
+        // `Instant`'s internal representation (e.g. near `Duration::MAX`). Fall back to
+        // the unbounded wait in that case instead of risking the panic.
+        let Some(deadline) = Instant::now().checked_add(timeout) else {
+            return self.wait_for_change();
+        };
         let mut state = self.notifier.state.lock().unwrap();
-        let deadline = Instant::now() + timeout;
         loop {
             if state.generation != self.last_seen_generation {
                 self.last_seen_generation = state.generation;
