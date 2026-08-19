@@ -124,12 +124,12 @@ fn subscriber_receives_new_value_on_change() {
 
     let watcher =
         PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
-    let subscription = watcher.subscribe();
+    let mut subscription = watcher.subscribe();
 
     std::fs::write(file.path(), "port = 9500").unwrap();
 
     let received = subscription
-        .recv_timeout(Duration::from_secs(5))
+        .wait_for_change_timeout(Duration::from_secs(5))
         .expect("expected a change notification");
     assert_eq!(received.port, 9500);
 }
@@ -141,7 +141,7 @@ fn subscriber_gets_no_notification_for_a_byte_identical_rewrite() {
 
     let watcher =
         PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
-    let subscription = watcher.subscribe();
+    let mut subscription = watcher.subscribe();
 
     // Same bytes as the file already has; must not be treated as a change.
     std::fs::write(file.path(), "port = 9000").unwrap();
@@ -149,7 +149,7 @@ fn subscriber_gets_no_notification_for_a_byte_identical_rewrite() {
 
     assert!(
         subscription
-            .recv_timeout(Duration::from_millis(50))
+            .wait_for_change_timeout(Duration::from_millis(50))
             .is_none()
     );
 }
@@ -167,10 +167,10 @@ fn subscriber_gets_no_notification_before_subscribing() {
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(watcher.load().port, 9500);
 
-    let subscription = watcher.subscribe();
+    let mut subscription = watcher.subscribe();
     assert!(
         subscription
-            .recv_timeout(Duration::from_millis(50))
+            .wait_for_change_timeout(Duration::from_millis(50))
             .is_none()
     );
 }
@@ -182,19 +182,53 @@ fn multiple_subscribers_all_receive_the_same_change() {
 
     let watcher =
         PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
-    let sub_a = watcher.subscribe();
-    let sub_b = watcher.subscribe();
+    let mut sub_a = watcher.subscribe();
+    let mut sub_b = watcher.subscribe();
 
     std::fs::write(file.path(), "port = 9500").unwrap();
 
     assert_eq!(
-        sub_a.recv_timeout(Duration::from_secs(5)).unwrap().port,
+        sub_a
+            .wait_for_change_timeout(Duration::from_secs(5))
+            .unwrap()
+            .port,
         9500
     );
     assert_eq!(
-        sub_b.recv_timeout(Duration::from_secs(5)).unwrap().port,
+        sub_b
+            .wait_for_change_timeout(Duration::from_secs(5))
+            .unwrap()
+            .port,
         9500
     );
+}
+
+#[test]
+fn subscriber_only_sees_the_latest_value_after_multiple_changes() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "port = 9000").unwrap();
+
+    let watcher =
+        PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
+    let mut subscription = watcher.subscribe();
+
+    std::fs::write(file.path(), "port = 9100").unwrap();
+    std::thread::sleep(Duration::from_millis(80));
+    std::fs::write(file.path(), "port = 9200").unwrap();
+    std::thread::sleep(Duration::from_millis(80));
+    std::fs::write(file.path(), "port = 9300").unwrap();
+    // Give the 50ms-interval background thread a tick to actually observe this last
+    // write before we check: wait_for_change_timeout correctly returns as soon as any
+    // generation change is pending rather than queuing, so without this the assertion
+    // below can race and observe 9200 (the second write) instead of 9300.
+    std::thread::sleep(Duration::from_millis(150));
+
+    // A single wait_for_change call coalesces all three intervening changes into the
+    // latest value — no backlog of 9100/9200 to drain first.
+    let received = subscription
+        .wait_for_change_timeout(Duration::from_secs(5))
+        .expect("expected a change notification");
+    assert_eq!(received.port, 9300);
 }
 
 #[test]
@@ -204,9 +238,43 @@ fn dropping_the_watcher_ends_the_subscription() {
 
     let watcher =
         PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_millis(50)).unwrap();
-    let subscription = watcher.subscribe();
+    let mut subscription = watcher.subscribe();
 
     drop(watcher);
 
-    assert!(subscription.recv_timeout(Duration::from_secs(5)).is_none());
+    assert!(
+        subscription
+            .wait_for_change_timeout(Duration::from_secs(5))
+            .is_none()
+    );
+}
+
+#[tokio::test]
+#[cfg(feature = "tokio")]
+#[traced_test]
+async fn starting_threaded_watcher_inside_a_tokio_runtime_logs_a_warning() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "port = 9000").unwrap();
+
+    let _watcher =
+        PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_secs(60)).unwrap();
+
+    assert!(logs_contain(
+        "consider dyn_properties::tokio::PropertyWatcher"
+    ));
+}
+
+#[test]
+#[cfg(feature = "tokio")]
+#[traced_test]
+fn starting_threaded_watcher_outside_a_tokio_runtime_does_not_warn() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "port = 9000").unwrap();
+
+    let _watcher =
+        PropertyWatcher::<AppConfig, Toml>::start(file.path(), Duration::from_secs(60)).unwrap();
+
+    assert!(!logs_contain(
+        "consider dyn_properties::tokio::PropertyWatcher"
+    ));
 }
