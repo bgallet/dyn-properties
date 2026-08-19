@@ -98,6 +98,17 @@ pub use validate::Validate;
 mod watcher;
 pub use watcher::{ChangeSubscription, PropertyWatcher};
 
+#[cfg(feature = "tokio")]
+mod tokio_watcher;
+
+#[cfg(feature = "tokio")]
+pub mod tokio {
+    //! A tokio-native [`PropertyWatcher`](crate::PropertyWatcher) that spawns no OS
+    //! thread — background refresh runs as a `tokio::spawn`'d task, and change
+    //! notifications are delivered via `tokio::sync::watch`.
+    pub use crate::tokio_watcher::PropertyWatcher;
+}
+
 pub mod exports {
     pub use serde;
     pub use tracing;
