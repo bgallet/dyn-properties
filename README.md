@@ -52,6 +52,9 @@ Neither format is enabled by default — enable exactly the one(s) you need:
 
 - `toml` — TOML config files.
 - `json` — JSON config files.
+- `tokio` — adds a tokio-native `PropertyWatcher` under `dyn_properties::tokio` that
+  spawns no OS thread (background refresh runs as a `tokio::spawn`'d task) and uses
+  `tokio::sync::watch` for change notifications.
 
 Both can be enabled together. With neither enabled, the `Format` trait
 itself is still available — implement it for your own format (YAML, RON,
