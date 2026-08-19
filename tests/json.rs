@@ -125,3 +125,63 @@ fn no_warning_when_every_field_is_known() {
     let _cfg: DbConfig = Json::parse(br#"{"port": 9999}"#).unwrap();
     assert!(!logs_contain("ignoring unknown field"));
 }
+
+#[derive(DynProperties, Debug)]
+struct SecretConfig {
+    #[required]
+    password: String,
+}
+
+#[derive(DynProperties, Debug)]
+struct ApiConfig {
+    #[required]
+    api_key: String,
+
+    #[range(min = 1, max = 65535)]
+    #[default(8080)]
+    port: u16,
+
+    secret: SecretConfig,
+}
+
+#[derive(DynProperties, Debug)]
+struct ApiConfigWithRequiredSection {
+    #[required]
+    required_secret: SecretConfig,
+}
+
+#[test]
+fn required_field_present_loads_successfully() {
+    let cfg: ApiConfig =
+        Json::parse(br#"{"api_key": "abc123", "secret": {"password": "hunter2"}}"#).unwrap();
+    assert_eq!(cfg.api_key, "abc123");
+    assert_eq!(cfg.port, 8080);
+    assert_eq!(cfg.secret.password, "hunter2");
+}
+
+#[test]
+fn required_field_missing_fails_to_deserialize() {
+    let result: Result<ApiConfig, _> =
+        Json::parse(br#"{"port": 9000, "secret": {"password": "hunter2"}}"#);
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("required"), "error was: {err}");
+    assert!(err.contains("api_key"), "error was: {err}");
+    assert!(err.contains("ApiConfig"), "error was: {err}");
+}
+
+#[test]
+fn required_field_missing_within_a_present_nested_object_fails() {
+    let result: Result<ApiConfig, _> = Json::parse(br#"{"api_key": "abc123", "secret": {}}"#);
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("required"), "error was: {err}");
+    assert!(err.contains("password"), "error was: {err}");
+    assert!(err.contains("SecretConfig"), "error was: {err}");
+}
+
+#[test]
+fn required_nested_field_rejects_a_fully_omitted_section() {
+    let result: Result<ApiConfigWithRequiredSection, _> = Json::parse(b"{}");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("required"), "error was: {err}");
+    assert!(err.contains("required_secret"), "error was: {err}");
+}

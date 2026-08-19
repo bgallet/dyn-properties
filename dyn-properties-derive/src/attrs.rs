@@ -16,6 +16,7 @@ pub enum Bound {
 pub struct FieldAttrs {
     pub bound: Option<Bound>,
     pub default: Option<Expr>,
+    pub required: bool,
 }
 
 fn parse_min_max(attr: &Attribute) -> Result<(Expr, Expr)> {
@@ -40,6 +41,7 @@ fn parse_min_max(attr: &Attribute) -> Result<(Expr, Expr)> {
 pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
     let mut bound: Option<Bound> = None;
     let mut default: Option<Expr> = None;
+    let mut required = false;
 
     for attr in attrs {
         if attr.path().is_ident("range") || attr.path().is_ident("len") {
@@ -57,10 +59,19 @@ pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
             });
         } else if attr.path().is_ident("default") {
             default = Some(attr.parse_args()?);
+        } else if attr.path().is_ident("required") {
+            if let syn::Meta::List(_) | syn::Meta::NameValue(_) = &attr.meta {
+                return Err(Error::new_spanned(attr, "#[required] takes no arguments"));
+            }
+            required = true;
         }
     }
 
-    Ok(FieldAttrs { bound, default })
+    Ok(FieldAttrs {
+        bound,
+        default,
+        required,
+    })
 }
 
 #[cfg(test)]
@@ -125,6 +136,24 @@ mod tests {
         .unwrap();
         assert!(attrs.bound.is_none());
         assert!(attrs.default.is_none());
+        assert!(!attrs.required);
+    }
+
+    #[test]
+    fn parses_required_flag() {
+        let attrs = first_field_attrs(quote::quote! {
+            struct Foo { #[required] field: String }
+        })
+        .unwrap();
+        assert!(attrs.required);
+    }
+
+    #[test]
+    fn required_rejects_arguments() {
+        let result = first_field_attrs(quote::quote! {
+            struct Foo { #[required(true)] field: String }
+        });
+        assert!(result.is_err());
     }
 
     #[test]

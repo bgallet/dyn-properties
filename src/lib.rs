@@ -65,6 +65,62 @@
 //! assert!(AppConfig::default().validate().is_ok());
 //! ```
 //!
+//! ## Required fields
+//!
+//! Some values — an API key, a database password — should never fall back to a
+//! silently-defaulted value: shipping a dev-environment default to production is worse
+//! than failing loudly. Mark a field `#[required]` instead of giving it a `#[default]`,
+//! and loading fails with [`Error::Parse`] if it's absent from the file:
+//!
+//! ```
+//! # #[cfg(feature = "toml")]
+//! # {
+//! use dyn_properties::{DynProperties, Format, Toml};
+//!
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     #[required]
+//!     api_key: String,
+//! }
+//!
+//! assert!(Toml::parse::<AppConfig>(b"").is_err());
+//! assert!(Toml::parse::<AppConfig>(br#"api_key = "abc123""#).is_ok());
+//! # }
+//! ```
+//!
+//! `#[required]` cannot be combined with `#[default(...)]` on the same field (they
+//! contradict each other), and cannot be used on an `Option<T>` field (which already
+//! means "absence is fine, gives `None`").
+//!
+//! A required field nested inside another `#[derive(DynProperties)]` struct is only
+//! enforced once the file provides that section at all — if the whole section is
+//! omitted, the nested struct falls back to its own [`Default`] impl directly, which
+//! (being `Default`, not `Deserialize`) never runs its required-field check. If a
+//! required field's section might be omitted entirely, mark the nested field itself
+//! `#[required]` too, forcing the section's presence:
+//!
+//! ```
+//! # #[cfg(feature = "toml")]
+//! # {
+//! use dyn_properties::{DynProperties, Format, Toml};
+//!
+//! #[derive(DynProperties)]
+//! struct SecretConfig {
+//!     #[required]
+//!     password: String,
+//! }
+//!
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     #[required]
+//!     secret: SecretConfig,
+//! }
+//!
+//! // Omitting `[secret]` entirely is now also rejected, not just an empty `[secret]`.
+//! assert!(Toml::parse::<AppConfig>(b"").is_err());
+//! # }
+//! ```
+//!
 //! ## Cargo features
 //!
 //! Neither format is enabled by default — enable exactly the one(s) you need:
