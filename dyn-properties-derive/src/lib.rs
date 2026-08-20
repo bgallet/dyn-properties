@@ -21,7 +21,7 @@ pub(crate) struct ParsedField<'a> {
     pub default: Option<syn::Expr>,
 }
 
-#[proc_macro_derive(DynProperties, attributes(range, len, default))]
+#[proc_macro_derive(DynProperties, attributes(range, len, default, opaque))]
 pub fn derive_dyn_properties(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match expand(&input) {
@@ -56,11 +56,15 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
             .ident
             .clone()
             .expect("named field always has an ident");
-        let kind = type_kind::classify(&field.ty)?;
+        let mut kind = type_kind::classify(&field.ty)?;
         let field_attrs = attrs::parse_field_attrs(&field.attrs)?;
         if let Some(bound) = &field_attrs.bound {
             check_bound_compatibility(bound, &kind, &field_ident)?;
             check_duration_bound_literal_syntax(bound, &kind)?;
+        }
+        check_opaque_compatibility(field_attrs.opaque, &kind, &field_ident)?;
+        if field_attrs.opaque {
+            kind = force_opaque(kind);
         }
         check_duration_has_default(&kind, &field_attrs.default, &field_ident)?;
         check_duration_default_literal_syntax(&field_attrs.default, &kind)?;
@@ -120,6 +124,43 @@ fn check_bound_compatibility(
                 "#[{attr_name}] cannot be used on field `{field_ident}`: incompatible field type"
             ),
         ))
+    }
+}
+
+/// `#[opaque]` promotes a `Nested`-classified field (bare or `Option`-wrapped) to
+/// `Opaque`, so the generated `validate()` doesn't assume the field type implements
+/// `Validate`. Meaningless (and rejected) on String/Numeric/Duration fields, whose
+/// validation story is bounds, not recursion; harmless no-op on a field already
+/// auto-classified `Opaque` (e.g. redundantly writing `#[opaque]` on a `Vec<String>`).
+fn check_opaque_compatibility(
+    opaque: bool,
+    kind: &FieldKind,
+    field_ident: &syn::Ident,
+) -> Result<()> {
+    if !opaque {
+        return Ok(());
+    }
+    if matches!(
+        effective_kind(kind),
+        FieldKind::String | FieldKind::Numeric | FieldKind::Duration
+    ) {
+        return Err(Error::new_spanned(
+            field_ident,
+            format!("#[opaque] cannot be used on field `{field_ident}`: incompatible field type"),
+        ));
+    }
+    Ok(())
+}
+
+/// Applies `#[opaque]`'s effect: `Nested` becomes `Opaque`, through an `Option` wrapper
+/// if present. Anything else (already `Opaque`, or the String/Numeric/Duration kinds
+/// `check_opaque_compatibility` already rejected `#[opaque]` on) passes through
+/// unchanged.
+fn force_opaque(kind: FieldKind) -> FieldKind {
+    match kind {
+        FieldKind::Nested => FieldKind::Opaque,
+        FieldKind::Option(inner) => FieldKind::Option(Box::new(force_opaque(*inner))),
+        other => other,
     }
 }
 

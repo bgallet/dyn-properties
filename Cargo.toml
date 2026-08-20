@@ -38,5 +38,9 @@ required-features = ["toml"]
 name = "json"
 required-features = ["json"]
 
+[[test]]
+name = "opaque"
+required-features = ["toml"]
+
 [workspace]
 members = ["dyn-properties-derive"]
