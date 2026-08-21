@@ -291,3 +291,51 @@ fn starting_threaded_watcher_outside_a_tokio_runtime_does_not_warn() {
         "consider dyn_properties::tokio::PropertyWatcher"
     ));
 }
+
+#[derive(DynProperties)]
+struct RequiredConfig {
+    #[required]
+    api_key: String,
+
+    #[range(min = 1, max = 65535)]
+    #[default(8080)]
+    port: u16,
+}
+
+#[test]
+fn start_fails_with_error_parse_when_a_required_field_is_missing() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "port = 9000").unwrap();
+
+    let result =
+        PropertyWatcher::<RequiredConfig, Toml>::start(file.path(), Duration::from_secs(60));
+    match result {
+        Err(dyn_properties::Error::Parse(e)) => {
+            let msg = e.to_string();
+            assert!(msg.contains("api_key"), "error was: {msg}");
+        }
+        Err(other) => panic!("expected Error::Parse, got {other:?}"),
+        Ok(_) => panic!("expected start() to fail when api_key is missing"),
+    }
+}
+
+#[test]
+#[traced_test]
+fn reload_survives_a_required_field_disappearing_and_keeps_last_good_value() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    writeln!(file, "api_key = \"abc123\"\nport = 9000").unwrap();
+
+    let watcher =
+        PropertyWatcher::<RequiredConfig, Toml>::start(file.path(), Duration::from_millis(50))
+            .unwrap();
+    assert_eq!(watcher.load().api_key, "abc123");
+
+    // Rewrite the file without the required field.
+    std::fs::write(file.path(), "port = 9500").unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    assert_eq!(watcher.load().api_key, "abc123");
+    assert_eq!(watcher.load().port, 9000);
+    assert!(logs_contain("reload failed"));
+    assert!(logs_contain("api_key"));
+}

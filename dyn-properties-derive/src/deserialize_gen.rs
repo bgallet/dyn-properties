@@ -10,8 +10,22 @@ pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream
     let struct_name_str = struct_name.to_string();
 
     let helper_fields: Vec<TokenStream> = fields.iter().map(|f| helper_field(f)).collect();
-    let overlay_assignments: Vec<TokenStream> =
-        fields.iter().map(|f| overlay_assignment(f)).collect();
+    let overlay_assignments: Vec<TokenStream> = fields
+        .iter()
+        .map(|f| overlay_assignment(f, &struct_name_str))
+        .collect();
+    // Every field's overlay is `.unwrap_or(default_instance.field)` — except `#[required]`
+    // fields, which never reference `default_instance` at all. If every field on this
+    // struct happens to be `#[required]`, skip constructing it entirely: an unread local
+    // would otherwise leak an `unused_variables` warning into the caller's own build.
+    let needs_default_instance = fields.iter().any(|f| !f.required);
+    let default_instance_binding = if needs_default_instance {
+        quote_spanned! {struct_name.span()=>
+            let default_instance = <#struct_name as ::std::default::Default>::default();
+        }
+    } else {
+        TokenStream::new()
+    };
 
     quote_spanned! {struct_name.span()=>
         impl<'de> dyn_properties::exports::serde::Deserialize<'de> for #struct_name {
@@ -50,7 +64,7 @@ pub fn generate(struct_name: &syn::Ident, fields: &[ParsedField]) -> TokenStream
                     );
                 }
 
-                let default_instance = <#struct_name as ::std::default::Default>::default();
+                #default_instance_binding
 
                 ::std::result::Result::Ok(#struct_name {
                     #(#overlay_assignments)*
@@ -97,12 +111,51 @@ fn helper_field(field: &ParsedField) -> TokenStream {
     }
 }
 
-fn overlay_assignment(field: &ParsedField) -> TokenStream {
+fn overlay_assignment(field: &ParsedField, struct_name_str: &str) -> TokenStream {
     let ident = &field.ident;
+    let field_name = ident.to_string();
     let span = field.field.span();
+    let missing_required_error = missing_required_error(struct_name_str, &field_name, span);
+
+    if field.required {
+        // Compatibility checks in lib.rs already rule out #[required] on an Option<T>
+        // field, so this is always the "bare type" overlay arm.
+        return quote_spanned! {span=>
+            #ident: helper.#ident.ok_or_else(|| #missing_required_error)?,
+        };
+    }
+    if matches!(field.kind, FieldKind::Nested) {
+        // Not itself #[required], but its own HasRequiredField const (see
+        // required_gen) may say otherwise: a nested struct with a #[required] field of
+        // its own must have its section present here too, even though this field
+        // wasn't marked #[required] directly. Both branches produce the same type, and
+        // the `if` collapses to one arm at compile time (HAS_REQUIRED_FIELD is a
+        // `const`), so this costs nothing at runtime either way.
+        let ty = &field.field.ty;
+        return quote_spanned! {span=>
+            #ident: if <#ty as dyn_properties::HasRequiredField>::HAS_REQUIRED_FIELD {
+                helper.#ident.ok_or_else(|| #missing_required_error)?
+            } else {
+                helper.#ident.unwrap_or(default_instance.#ident)
+            },
+        };
+    }
     if matches!(field.kind, FieldKind::Option(_)) {
         quote_spanned! {span=> #ident: helper.#ident.or(default_instance.#ident), }
     } else {
         quote_spanned! {span=> #ident: helper.#ident.unwrap_or(default_instance.#ident), }
+    }
+}
+
+fn missing_required_error(
+    struct_name_str: &str,
+    field_name: &str,
+    span: proc_macro2::Span,
+) -> TokenStream {
+    quote_spanned! {span=>
+        <D::Error as dyn_properties::exports::serde::de::Error>::custom(::std::format!(
+            "{}: field `{}` is required and has no default, but was not found in the config file",
+            #struct_name_str, #field_name
+        ))
     }
 }

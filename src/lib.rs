@@ -65,6 +65,64 @@
 //! assert!(AppConfig::default().validate().is_ok());
 //! ```
 //!
+//! ## Required fields
+//!
+//! Some values — an API key, a database password — should never fall back to a
+//! silently-defaulted value: shipping a dev-environment default to production is worse
+//! than failing loudly. Mark a field `#[required]` instead of giving it a `#[default]`,
+//! and loading fails with [`Error::Parse`] if it's absent from the file:
+//!
+//! ```
+//! # #[cfg(feature = "toml")]
+//! # {
+//! use dyn_properties::{DynProperties, Format, Toml};
+//!
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     #[required]
+//!     api_key: String,
+//! }
+//!
+//! assert!(Toml::parse::<AppConfig>(b"").is_err());
+//! assert!(Toml::parse::<AppConfig>(br#"api_key = "abc123""#).is_ok());
+//! # }
+//! ```
+//!
+//! `#[required]` cannot be combined with `#[default(...)]` on the same field (they
+//! contradict each other), and cannot be used on an `Option<T>` field (which already
+//! means "absence is fine, gives `None`").
+//!
+//! A required field nested inside another `#[derive(DynProperties)]` struct
+//! automatically enforces its own section's presence, even if the *outer* field isn't
+//! itself marked `#[required]` — omitting the whole section is rejected exactly like
+//! omitting the required field directly would be:
+//!
+//! ```
+//! # #[cfg(feature = "toml")]
+//! # {
+//! use dyn_properties::{DynProperties, Format, Toml};
+//!
+//! #[derive(DynProperties)]
+//! struct SecretConfig {
+//!     #[required]
+//!     password: String,
+//! }
+//!
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     secret: SecretConfig, // not itself #[required] — doesn't need to be
+//! }
+//!
+//! // Omitting `[secret]` entirely is rejected, not just an empty `[secret]`.
+//! assert!(Toml::parse::<AppConfig>(b"").is_err());
+//! # }
+//! ```
+//!
+//! This propagation only applies to a *bare* nested field — wrapping it in
+//! `Option<SecretConfig>` is an explicit "this whole section is optional" signal that
+//! wins over the inner `#[required]`, giving `None` when the section is absent rather
+//! than an error.
+//!
 //! ## Cargo features
 //!
 //! Neither format is enabled by default — enable exactly the one(s) you need:
@@ -104,8 +162,10 @@ pub use format::Json;
 pub use format::Toml;
 
 mod error;
+mod required;
 mod validate;
 pub use error::Error;
+pub use required::HasRequiredField;
 pub use validate::Validate;
 
 mod watcher;
