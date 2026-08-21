@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use arc_swap::{ArcSwap, Guard};
 
@@ -28,9 +29,14 @@ use crate::{Error, Format, Validate};
 /// tick that reads a mid-write, momentarily-empty file will parse and validate
 /// successfully as "everything defaulted" under this crate's default-overlay design,
 /// silently replacing good config rather than failing loudly.
+///
+/// If a tokio runtime is active when [`start`](Self::start) is called and this crate is
+/// compiled with the `tokio` feature, a `tracing::warn!` points at
+/// [`dyn_properties::tokio::PropertyWatcher`](crate::tokio::PropertyWatcher) instead,
+/// which spawns no OS thread.
 pub struct PropertyWatcher<T, F> {
     inner: Arc<ArcSwap<T>>,
-    subscribers: Arc<Mutex<Vec<mpsc::Sender<Arc<T>>>>>,
+    notifier: Arc<Notifier>,
     /// Never read after construction — dropping it disconnects the channel, which is what
     /// signals the background thread's `recv_timeout` to wake immediately and stop
     /// polling. The leading underscore tells the `dead_code` lint this is intentional.
@@ -49,14 +55,14 @@ where
     ///
     /// Returns an error if the initial load fails; the background thread is only spawned
     /// once the initial load succeeds.
-    pub fn start(path: impl Into<PathBuf>, interval: std::time::Duration) -> Result<Self, Error> {
+    pub fn start(path: impl Into<PathBuf>, interval: Duration) -> Result<Self, Error> {
         let path = path.into();
         let (initial_bytes, initial) = load_and_validate::<T, F>(&path)?;
         let inner = Arc::new(ArcSwap::new(Arc::new(initial)));
-        let subscribers: Arc<Mutex<Vec<mpsc::Sender<Arc<T>>>>> = Arc::new(Mutex::new(Vec::new()));
+        let notifier = Arc::new(Notifier::new());
 
         let watcher_inner = Arc::clone(&inner);
-        let watcher_subscribers = Arc::clone(&subscribers);
+        let watcher_notifier = Arc::clone(&notifier);
         let watch_path = path.clone();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         // Carries the caller's current tracing span onto the background thread, so
@@ -72,7 +78,10 @@ where
                 // dropped) wakes this up immediately instead of waiting out the rest
                 // of the interval.
                 match stop_rx.recv_timeout(interval) {
-                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        watcher_notifier.close();
+                        return;
+                    }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                 }
                 let bytes = match std::fs::read(&watch_path) {
@@ -94,10 +103,8 @@ where
                 // persistently-invalid-but-unchanging file doesn't re-log every tick.
                 match parse_and_validate::<T, F>(&bytes) {
                     Ok(value) => {
-                        let value = Arc::new(value);
-                        watcher_inner.store(Arc::clone(&value));
-                        let mut subs = watcher_subscribers.lock().unwrap();
-                        subs.retain(|tx| tx.send(Arc::clone(&value)).is_ok());
+                        watcher_inner.store(Arc::new(value));
+                        watcher_notifier.notify_change();
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -111,9 +118,18 @@ where
             }
         });
 
+        #[cfg(feature = "tokio")]
+        if ::tokio::runtime::Handle::try_current().is_ok() {
+            tracing::warn!(
+                "dyn-properties: starting a thread-based PropertyWatcher while a tokio \
+                 runtime is active — consider dyn_properties::tokio::PropertyWatcher \
+                 instead to avoid spawning a dedicated OS thread"
+            );
+        }
+
         Ok(PropertyWatcher {
             inner,
-            subscribers,
+            notifier,
             _stop: stop_tx,
             _format: PhantomData,
         })
@@ -130,43 +146,137 @@ where
         self.inner.load()
     }
 
-    /// Subscribes to future changes: every time a reload tick finds the file's raw
-    /// content genuinely different from what it read last (and the new content parses
-    /// and validates successfully), the new value is sent to every live subscription.
+    /// Subscribes to future changes: [`ChangeSubscription::wait_for_change`] blocks
+    /// until the file's raw content is genuinely different from what it was at
+    /// `subscribe()` time (or at the last `wait_for_change` call) and the new content
+    /// parses and validates successfully, then returns the *latest* value.
     ///
     /// Only *future* changes are delivered — subscribing doesn't replay the current
-    /// value; call [`load`](Self::load) for that. A rewrite of the file with the exact
-    /// same bytes as before does not trigger a notification, but a byte-for-byte
-    /// different rewrite that happens to parse to an equal value does.
-    ///
-    /// Each subscription gets its own unbounded queue of every change, delivered in
-    /// order: a subscription that's never read (or reads slower than the file changes)
-    /// grows without bound, so drop it once you no longer need it.
+    /// value; call [`load`](Self::load) for that. Like `tokio::sync::watch`, this
+    /// coalesces: if several changes happen between two `wait_for_change` calls, only
+    /// the latest is observed, and memory use never grows regardless of how many
+    /// changes happen or how slowly a subscriber reads.
     pub fn subscribe(&self) -> ChangeSubscription<T> {
-        let (tx, rx) = mpsc::channel();
-        self.subscribers.lock().unwrap().push(tx);
-        ChangeSubscription { rx }
+        ChangeSubscription {
+            inner: Arc::clone(&self.inner),
+            notifier: Arc::clone(&self.notifier),
+            last_seen_generation: self.notifier.current_generation(),
+        }
+    }
+}
+
+impl<T, F> Drop for PropertyWatcher<T, F> {
+    fn drop(&mut self) {
+        // Also closed from the background thread's stop-channel arm on a normal
+        // shutdown; this is a second, always-reliable trigger for the case where the
+        // reload thread instead ended via a panic (e.g. a bug in a caller-defined
+        // `Format::parse`/`Validate`), which would otherwise leave a subscriber blocked
+        // in `wait_for_change()` hanging forever, contradicting its doc-promised `None`
+        // once the watcher has been dropped.
+        self.notifier.close();
+    }
+}
+
+struct Notifier {
+    state: Mutex<NotifierState>,
+    condvar: Condvar,
+}
+
+struct NotifierState {
+    generation: u64,
+    closed: bool,
+}
+
+impl Notifier {
+    fn new() -> Self {
+        Notifier {
+            state: Mutex::new(NotifierState {
+                generation: 0,
+                closed: false,
+            }),
+            condvar: Condvar::new(),
+        }
+    }
+
+    fn current_generation(&self) -> u64 {
+        self.state.lock().unwrap().generation
+    }
+
+    fn notify_change(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.generation += 1;
+        self.condvar.notify_all();
+    }
+
+    fn close(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.closed = true;
+        self.condvar.notify_all();
     }
 }
 
 /// A subscription to a [`PropertyWatcher`]'s future changes, obtained from
 /// [`PropertyWatcher::subscribe`].
 pub struct ChangeSubscription<T> {
-    rx: mpsc::Receiver<Arc<T>>,
+    inner: Arc<ArcSwap<T>>,
+    notifier: Arc<Notifier>,
+    last_seen_generation: u64,
 }
 
 impl<T> ChangeSubscription<T> {
-    /// Blocks until the next change, or returns `None` once the watcher has been
-    /// dropped and no further changes can ever arrive.
-    pub fn recv(&self) -> Option<Arc<T>> {
-        self.rx.recv().ok()
+    /// Blocks until the value has changed since the last call (or since
+    /// `subscribe()`), then returns the *latest* value, or `None` once the watcher has
+    /// been dropped and no further changes can ever arrive. If multiple changes happen
+    /// between two calls, only the latest is observed — intermediate values are not
+    /// queued.
+    pub fn wait_for_change(&mut self) -> Option<Arc<T>> {
+        let mut state = self.notifier.state.lock().unwrap();
+        loop {
+            if state.generation != self.last_seen_generation {
+                self.last_seen_generation = state.generation;
+                return Some(self.inner.load_full());
+            }
+            if state.closed {
+                return None;
+            }
+            state = self.notifier.condvar.wait(state).unwrap();
+        }
     }
 
-    /// Like [`recv`](Self::recv), but gives up and returns `None` after `timeout` if no
-    /// change arrives (this collapses "timed out" and "watcher dropped" into the same
-    /// `None`, same as `recv`'s "no more changes are coming" result).
-    pub fn recv_timeout(&self, timeout: std::time::Duration) -> Option<Arc<T>> {
-        self.rx.recv_timeout(timeout).ok()
+    /// Like [`wait_for_change`](Self::wait_for_change), but gives up and returns `None`
+    /// after `timeout` if no change arrives (this collapses "timed out" and "watcher
+    /// dropped" into the same `None`, same as `wait_for_change`'s "no more changes are
+    /// coming" result).
+    pub fn wait_for_change_timeout(&mut self, timeout: Duration) -> Option<Arc<T>> {
+        // `Instant::now() + timeout` panics if `timeout` is large enough to overflow
+        // `Instant`'s internal representation (e.g. near `Duration::MAX`). Fall back to
+        // the unbounded wait in that case instead of risking the panic.
+        let Some(deadline) = Instant::now().checked_add(timeout) else {
+            return self.wait_for_change();
+        };
+        let mut state = self.notifier.state.lock().unwrap();
+        loop {
+            if state.generation != self.last_seen_generation {
+                self.last_seen_generation = state.generation;
+                return Some(self.inner.load_full());
+            }
+            if state.closed {
+                return None;
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            let (guard, _) = self
+                .notifier
+                .condvar
+                .wait_timeout(state, deadline - now)
+                .unwrap();
+            state = guard;
+            // Loop back around regardless of whether this was a real notification, a
+            // timeout, or a spurious wakeup: the generation/closed checks above and the
+            // deadline check on the next iteration decide what actually happened.
+        }
     }
 }
 
@@ -174,11 +284,11 @@ impl<T> Iterator for ChangeSubscription<T> {
     type Item = Arc<T>;
 
     fn next(&mut self) -> Option<Arc<T>> {
-        self.recv()
+        self.wait_for_change()
     }
 }
 
-fn parse_and_validate<T, F>(bytes: &[u8]) -> Result<T, Error>
+pub(crate) fn parse_and_validate<T, F>(bytes: &[u8]) -> Result<T, Error>
 where
     T: serde::de::DeserializeOwned + Validate,
     F: Format,

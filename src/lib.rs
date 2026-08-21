@@ -129,10 +129,23 @@
 //!
 //! - `toml` — adds [`Toml`], parsing config files as TOML.
 //! - `json` — adds [`Json`], parsing config files as JSON.
+//! - `tokio` — adds [`tokio::PropertyWatcher`], a tokio-native counterpart to the
+//!   default thread-based [`PropertyWatcher`] (see "Tokio" below).
 //!
-//! Both can be enabled together. With neither enabled, [`Format`] itself is still
-//! available — implement it for your own format (YAML, RON, ...) and use
-//! `PropertyWatcher<T, YourFormat>` without depending on `toml` or `serde_json` at all.
+//! The two format features can be enabled together. With neither enabled, [`Format`]
+//! itself is still available — implement it for your own format (YAML, RON, ...) and
+//! use `PropertyWatcher<T, YourFormat>` without depending on `toml` or `serde_json` at
+//! all.
+//!
+//! ## Tokio
+//!
+//! [`PropertyWatcher`] always works: it polls its file from a dedicated `std::thread`,
+//! no async runtime required. If you're already running a tokio runtime, enable the
+//! `tokio` feature and use [`tokio::PropertyWatcher`] instead — it spawns no extra OS
+//! thread (refresh runs as a `tokio::spawn`'d task on your own runtime) and its
+//! `subscribe()` returns a native `tokio::sync::watch::Receiver`. If you start the
+//! thread-based [`PropertyWatcher`] while a tokio runtime is active and the `tokio`
+//! feature is enabled, a `tracing::warn!` points you at the alternative.
 
 pub use dyn_properties_derive::DynProperties;
 
@@ -157,6 +170,17 @@ pub use validate::Validate;
 
 mod watcher;
 pub use watcher::{ChangeSubscription, PropertyWatcher};
+
+#[cfg(feature = "tokio")]
+mod tokio_watcher;
+
+#[cfg(feature = "tokio")]
+pub mod tokio {
+    //! A tokio-native [`PropertyWatcher`](crate::PropertyWatcher) that spawns no OS
+    //! thread — background refresh runs as a `tokio::spawn`'d task, and change
+    //! notifications are delivered via `tokio::sync::watch`.
+    pub use crate::tokio_watcher::PropertyWatcher;
+}
 
 pub mod exports {
     pub use serde;

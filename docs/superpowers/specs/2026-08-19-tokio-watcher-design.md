@@ -266,6 +266,10 @@ name = "tokio_watcher"
 required-features = ["toml", "tokio"]
 ```
 
+> **Erratum:** the `tokio` dependency's feature list above also needed
+> `sync` (for `tokio::sync::watch`), which this spec omitted — caught
+> during implementation.
+
 `tokio` as a dev-dependency is unconditional (dev-dependencies don't
 affect what a consumer of the published crate pulls in) — needed so
 `tests/tokio_watcher.rs` can use `#[tokio::test]` regardless of the
