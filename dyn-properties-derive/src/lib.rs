@@ -7,6 +7,7 @@ mod attrs;
 mod default_gen;
 mod deserialize_gen;
 mod duration_syntax;
+mod required_gen;
 mod type_kind;
 mod validate_gen;
 
@@ -89,11 +90,13 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
     let validate_impl = validate_gen::generate(struct_name, &parsed_fields);
     let default_impl = default_gen::generate(struct_name, &parsed_fields);
     let deserialize_impl = deserialize_gen::generate(struct_name, &parsed_fields);
+    let has_required_impl = required_gen::generate(struct_name, &parsed_fields);
 
     Ok(quote! {
         #validate_impl
         #default_impl
         #deserialize_impl
+        #has_required_impl
     })
 }
 

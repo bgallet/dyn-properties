@@ -92,12 +92,10 @@
 //! contradict each other), and cannot be used on an `Option<T>` field (which already
 //! means "absence is fine, gives `None`").
 //!
-//! A required field nested inside another `#[derive(DynProperties)]` struct is only
-//! enforced once the file provides that section at all — if the whole section is
-//! omitted, the nested struct falls back to its own [`Default`] impl directly, which
-//! (being `Default`, not `Deserialize`) never runs its required-field check. If a
-//! required field's section might be omitted entirely, mark the nested field itself
-//! `#[required]` too, forcing the section's presence:
+//! A required field nested inside another `#[derive(DynProperties)]` struct
+//! automatically enforces its own section's presence, even if the *outer* field isn't
+//! itself marked `#[required]` — omitting the whole section is rejected exactly like
+//! omitting the required field directly would be:
 //!
 //! ```
 //! # #[cfg(feature = "toml")]
@@ -112,14 +110,18 @@
 //!
 //! #[derive(DynProperties)]
 //! struct AppConfig {
-//!     #[required]
-//!     secret: SecretConfig,
+//!     secret: SecretConfig, // not itself #[required] — doesn't need to be
 //! }
 //!
-//! // Omitting `[secret]` entirely is now also rejected, not just an empty `[secret]`.
+//! // Omitting `[secret]` entirely is rejected, not just an empty `[secret]`.
 //! assert!(Toml::parse::<AppConfig>(b"").is_err());
 //! # }
 //! ```
+//!
+//! This propagation only applies to a *bare* nested field — wrapping it in
+//! `Option<SecretConfig>` is an explicit "this whole section is optional" signal that
+//! wins over the inner `#[required]`, giving `None` when the section is absent rather
+//! than an error.
 //!
 //! ## Cargo features
 //!
@@ -147,8 +149,10 @@ pub use format::Json;
 pub use format::Toml;
 
 mod error;
+mod required;
 mod validate;
 pub use error::Error;
+pub use required::HasRequiredField;
 pub use validate::Validate;
 
 mod watcher;

@@ -115,21 +115,47 @@ fn overlay_assignment(field: &ParsedField, struct_name_str: &str) -> TokenStream
     let ident = &field.ident;
     let field_name = ident.to_string();
     let span = field.field.span();
+    let missing_required_error = missing_required_error(struct_name_str, &field_name, span);
+
     if field.required {
         // Compatibility checks in lib.rs already rule out #[required] on an Option<T>
         // field, so this is always the "bare type" overlay arm.
         return quote_spanned! {span=>
-            #ident: helper.#ident.ok_or_else(|| {
-                <D::Error as dyn_properties::exports::serde::de::Error>::custom(::std::format!(
-                    "{}: field `{}` is required and has no default, but was not found in the config file",
-                    #struct_name_str, #field_name
-                ))
-            })?,
+            #ident: helper.#ident.ok_or_else(|| #missing_required_error)?,
+        };
+    }
+    if matches!(field.kind, FieldKind::Nested) {
+        // Not itself #[required], but its own HasRequiredField const (see
+        // required_gen) may say otherwise: a nested struct with a #[required] field of
+        // its own must have its section present here too, even though this field
+        // wasn't marked #[required] directly. Both branches produce the same type, and
+        // the `if` collapses to one arm at compile time (HAS_REQUIRED_FIELD is a
+        // `const`), so this costs nothing at runtime either way.
+        let ty = &field.field.ty;
+        return quote_spanned! {span=>
+            #ident: if <#ty as dyn_properties::HasRequiredField>::HAS_REQUIRED_FIELD {
+                helper.#ident.ok_or_else(|| #missing_required_error)?
+            } else {
+                helper.#ident.unwrap_or(default_instance.#ident)
+            },
         };
     }
     if matches!(field.kind, FieldKind::Option(_)) {
         quote_spanned! {span=> #ident: helper.#ident.or(default_instance.#ident), }
     } else {
         quote_spanned! {span=> #ident: helper.#ident.unwrap_or(default_instance.#ident), }
+    }
+}
+
+fn missing_required_error(
+    struct_name_str: &str,
+    field_name: &str,
+    span: proc_macro2::Span,
+) -> TokenStream {
+    quote_spanned! {span=>
+        <D::Error as dyn_properties::exports::serde::de::Error>::custom(::std::format!(
+            "{}: field `{}` is required and has no default, but was not found in the config file",
+            #struct_name_str, #field_name
+        ))
     }
 }

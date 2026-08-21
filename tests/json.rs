@@ -126,7 +126,7 @@ fn no_warning_when_every_field_is_known() {
     assert!(!logs_contain("ignoring unknown field"));
 }
 
-#[derive(DynProperties, Debug)]
+#[derive(DynProperties, Debug, PartialEq)]
 struct SecretConfig {
     #[required]
     password: String,
@@ -184,4 +184,57 @@ fn required_nested_field_rejects_a_fully_omitted_section() {
     let err = result.unwrap_err().to_string();
     assert!(err.contains("required"), "error was: {err}");
     assert!(err.contains("required_secret"), "error was: {err}");
+}
+
+#[test]
+fn bare_nested_field_automatically_rejects_a_fully_omitted_section() {
+    // ApiConfig.secret is a *bare* field, NOT itself marked #[required] — but
+    // SecretConfig has a #[required] field of its own, so omitting `secret` entirely
+    // must be rejected automatically, with no explicit marking needed on `secret`
+    // itself. Since `secret` is entirely absent, the error is raised right here
+    // (naming `secret`, ApiConfig's own field) — it never gets far enough to recurse
+    // into SecretConfig::deserialize and name `password` instead (that's
+    // `required_field_missing_within_a_present_nested_object_fails`, above).
+    let result: Result<ApiConfig, _> = Json::parse(br#"{"api_key": "abc123"}"#);
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("required"), "error was: {err}");
+    assert!(err.contains("secret"), "error was: {err}");
+    assert!(err.contains("ApiConfig"), "error was: {err}");
+}
+
+#[derive(DynProperties, Debug)]
+struct OptionalApiConfig {
+    // Wrapping in Option is an explicit "this whole section is optional" signal that
+    // wins over SecretConfig's own #[required] field — omitting `secret` here must
+    // give None, not an error.
+    secret: Option<SecretConfig>,
+}
+
+#[test]
+fn option_wrapped_nested_field_is_exempt_from_automatic_propagation() {
+    let cfg: OptionalApiConfig = Json::parse(b"{}").unwrap();
+    assert_eq!(cfg.secret, None);
+}
+
+// A middle layer with no #[required] field of its own — its only connection to
+// "required" is transitively, through its own bare `secret` field.
+#[derive(DynProperties, Debug)]
+struct MiddleConfig {
+    secret: SecretConfig,
+}
+
+#[derive(DynProperties, Debug)]
+struct GatewayConfig {
+    middle: MiddleConfig,
+}
+
+#[test]
+fn automatic_propagation_cascades_through_three_levels_of_nesting() {
+    // GatewayConfig -> MiddleConfig -> SecretConfig -> #[required] password. Neither
+    // `middle` nor `secret` is itself marked #[required] — MiddleConfig doesn't even
+    // have a #[required] field of its own, only a transitive one.
+    let result: Result<GatewayConfig, _> = Json::parse(b"{}");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("required"), "error was: {err}");
+    assert!(err.contains("middle"), "error was: {err}");
 }
