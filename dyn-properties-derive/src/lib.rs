@@ -7,6 +7,7 @@ mod attrs;
 mod default_gen;
 mod deserialize_gen;
 mod duration_syntax;
+mod required_gen;
 mod type_kind;
 mod validate_gen;
 
@@ -19,9 +20,10 @@ pub(crate) struct ParsedField<'a> {
     pub kind: FieldKind,
     pub bound: Option<Bound>,
     pub default: Option<syn::Expr>,
+    pub required: bool,
 }
 
-#[proc_macro_derive(DynProperties, attributes(range, len, default, opaque))]
+#[proc_macro_derive(DynProperties, attributes(range, len, default, opaque, required))]
 pub fn derive_dyn_properties(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match expand(&input) {
@@ -66,7 +68,18 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
         if field_attrs.opaque {
             kind = force_opaque(kind);
         }
-        check_duration_has_default(&kind, &field_attrs.default, &field_ident)?;
+        check_required_compatibility(
+            field_attrs.required,
+            &field_attrs.default,
+            &kind,
+            &field_ident,
+        )?;
+        check_duration_has_default_or_required(
+            &kind,
+            &field_attrs.default,
+            field_attrs.required,
+            &field_ident,
+        )?;
         check_duration_default_literal_syntax(&field_attrs.default, &kind)?;
         parsed_fields.push(ParsedField {
             field,
@@ -74,17 +87,20 @@ fn expand(input: &DeriveInput) -> Result<TokenStream2> {
             kind,
             bound: field_attrs.bound,
             default: field_attrs.default,
+            required: field_attrs.required,
         });
     }
 
     let validate_impl = validate_gen::generate(struct_name, &parsed_fields);
     let default_impl = default_gen::generate(struct_name, &parsed_fields);
     let deserialize_impl = deserialize_gen::generate(struct_name, &parsed_fields);
+    let has_required_impl = required_gen::generate(struct_name, &parsed_fields);
 
     Ok(quote! {
         #validate_impl
         #default_impl
         #deserialize_impl
+        #has_required_impl
     })
 }
 
@@ -164,19 +180,54 @@ fn force_opaque(kind: FieldKind) -> FieldKind {
     }
 }
 
-fn check_duration_has_default(
-    kind: &FieldKind,
+/// `#[required]` and `#[default(...)]` are mutually exclusive (contradictory: one says
+/// "must be present", the other says "here's a fallback if absent"), and `#[required]`
+/// cannot be combined with an `Option<T>` field (already means "absence is fine, gives
+/// `None`" — `#[required]` on top of that is a contradiction in the other direction).
+fn check_required_compatibility(
+    required: bool,
     default: &Option<syn::Expr>,
+    kind: &FieldKind,
     field_ident: &syn::Ident,
 ) -> Result<()> {
-    if kind.requires_explicit_default() && default.is_none() {
+    if !required {
+        return Ok(());
+    }
+    if default.is_some() {
+        return Err(Error::new_spanned(
+            field_ident,
+            format!(
+                "field `{field_ident}` cannot have both #[required] and #[default(...)]: \
+                 a required field has no fallback to default to"
+            ),
+        ));
+    }
+    if matches!(kind, FieldKind::Option(_)) {
+        return Err(Error::new_spanned(
+            field_ident,
+            format!(
+                "#[required] cannot be used on field `{field_ident}`: Option<T> already means \
+                 the field may be absent (giving None); use a bare (non-Option) type instead"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn check_duration_has_default_or_required(
+    kind: &FieldKind,
+    default: &Option<syn::Expr>,
+    required: bool,
+    field_ident: &syn::Ident,
+) -> Result<()> {
+    if kind.requires_explicit_default() && default.is_none() && !required {
         Err(Error::new_spanned(
             field_ident,
             format!(
-                "field `{field_ident}` is a Duration and must have a #[default(\"...\")] attribute: \
-                 Duration has no implicit default, since a silent zero-duration is rarely the right \
-                 fallback for a timeout or interval. Wrap the field in Option<Duration> instead if \
-                 \"unset\" (None) is what you actually want."
+                "field `{field_ident}` is a Duration and must have a #[default(\"...\")] or \
+                 #[required] attribute: Duration has no implicit default, since a silent \
+                 zero-duration is rarely the right fallback for a timeout or interval. Wrap the \
+                 field in Option<Duration> instead if \"unset\" (None) is what you actually want."
             ),
         ))
     } else {

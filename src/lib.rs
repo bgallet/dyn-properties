@@ -107,16 +107,87 @@
 //! `#[derive(DynProperties)]` struct and the generated code calls `Validate::validate`
 //! on it — which fails to compile for a type that doesn't implement it.
 //!
+//! ## Required fields
+//!
+//! Some values — an API key, a database password — should never fall back to a
+//! silently-defaulted value: shipping a dev-environment default to production is worse
+//! than failing loudly. Mark a field `#[required]` instead of giving it a `#[default]`,
+//! and loading fails with [`Error::Parse`] if it's absent from the file:
+//!
+//! ```
+//! # #[cfg(feature = "toml")]
+//! # {
+//! use dyn_properties::{DynProperties, Format, Toml};
+//!
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     #[required]
+//!     api_key: String,
+//! }
+//!
+//! assert!(Toml::parse::<AppConfig>(b"").is_err());
+//! assert!(Toml::parse::<AppConfig>(br#"api_key = "abc123""#).is_ok());
+//! # }
+//! ```
+//!
+//! `#[required]` cannot be combined with `#[default(...)]` on the same field (they
+//! contradict each other), and cannot be used on an `Option<T>` field (which already
+//! means "absence is fine, gives `None`").
+//!
+//! A required field nested inside another `#[derive(DynProperties)]` struct
+//! automatically enforces its own section's presence, even if the *outer* field isn't
+//! itself marked `#[required]` — omitting the whole section is rejected exactly like
+//! omitting the required field directly would be:
+//!
+//! ```
+//! # #[cfg(feature = "toml")]
+//! # {
+//! use dyn_properties::{DynProperties, Format, Toml};
+//!
+//! #[derive(DynProperties)]
+//! struct SecretConfig {
+//!     #[required]
+//!     password: String,
+//! }
+//!
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     secret: SecretConfig, // not itself #[required] — doesn't need to be
+//! }
+//!
+//! // Omitting `[secret]` entirely is rejected, not just an empty `[secret]`.
+//! assert!(Toml::parse::<AppConfig>(b"").is_err());
+//! # }
+//! ```
+//!
+//! This propagation only applies to a *bare* nested field — wrapping it in
+//! `Option<SecretConfig>` is an explicit "this whole section is optional" signal that
+//! wins over the inner `#[required]`, giving `None` when the section is absent rather
+//! than an error.
+//!
 //! ## Cargo features
 //!
 //! Neither format is enabled by default — enable exactly the one(s) you need:
 //!
 //! - `toml` — adds [`Toml`], parsing config files as TOML.
 //! - `json` — adds [`Json`], parsing config files as JSON.
+//! - `tokio` — adds [`tokio::PropertyWatcher`], a tokio-native counterpart to the
+//!   default thread-based [`PropertyWatcher`] (see "Tokio" below).
 //!
-//! Both can be enabled together. With neither enabled, [`Format`] itself is still
-//! available — implement it for your own format (YAML, RON, ...) and use
-//! `PropertyWatcher<T, YourFormat>` without depending on `toml` or `serde_json` at all.
+//! The two format features can be enabled together. With neither enabled, [`Format`]
+//! itself is still available — implement it for your own format (YAML, RON, ...) and
+//! use `PropertyWatcher<T, YourFormat>` without depending on `toml` or `serde_json` at
+//! all.
+//!
+//! ## Tokio
+//!
+//! [`PropertyWatcher`] always works: it polls its file from a dedicated `std::thread`,
+//! no async runtime required. If you're already running a tokio runtime, enable the
+//! `tokio` feature and use [`tokio::PropertyWatcher`] instead — it spawns no extra OS
+//! thread (refresh runs as a `tokio::spawn`'d task on your own runtime) and its
+//! `subscribe()` returns a native `tokio::sync::watch::Receiver`. If you start the
+//! thread-based [`PropertyWatcher`] while a tokio runtime is active and the `tokio`
+//! feature is enabled, a `tracing::warn!` points you at the alternative.
 
 pub use dyn_properties_derive::DynProperties;
 
@@ -133,12 +204,25 @@ pub use format::Json;
 pub use format::Toml;
 
 mod error;
+mod required;
 mod validate;
 pub use error::Error;
+pub use required::HasRequiredField;
 pub use validate::Validate;
 
 mod watcher;
 pub use watcher::{ChangeSubscription, PropertyWatcher};
+
+#[cfg(feature = "tokio")]
+mod tokio_watcher;
+
+#[cfg(feature = "tokio")]
+pub mod tokio {
+    //! A tokio-native [`PropertyWatcher`](crate::PropertyWatcher) that spawns no OS
+    //! thread — background refresh runs as a `tokio::spawn`'d task, and change
+    //! notifications are delivered via `tokio::sync::watch`.
+    pub use crate::tokio_watcher::PropertyWatcher;
+}
 
 pub mod exports {
     pub use serde;

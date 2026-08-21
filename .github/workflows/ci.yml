@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        features: [none, toml, json, all]
+        features: [none, toml, json, tokio, all]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,6 +43,7 @@ jobs:
             none) echo "flags=--no-default-features" >> "$GITHUB_OUTPUT" ;;
             toml) echo "flags=--no-default-features --features toml" >> "$GITHUB_OUTPUT" ;;
             json) echo "flags=--no-default-features --features json" >> "$GITHUB_OUTPUT" ;;
+            tokio) echo "flags=--no-default-features --features tokio" >> "$GITHUB_OUTPUT" ;;
             all)  echo "flags=--all-features" >> "$GITHUB_OUTPUT" ;;
           esac
       - run: cargo clippy --workspace ${{ steps.flags.outputs.flags }} --all-targets -- -D warnings

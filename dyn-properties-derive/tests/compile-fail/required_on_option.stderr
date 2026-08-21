@@ -1,0 +1,5 @@
+error: #[required] cannot be used on field `field`: Option<T> already means the field may be absent (giving None); use a bare (non-Option) type instead
+ --> tests/compile-fail/required_on_option.rs:6:5
+  |
+6 |     field: Option<String>,
+  |     ^^^^^
