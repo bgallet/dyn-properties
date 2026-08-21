@@ -12,15 +12,18 @@ serde = { version = "1", features = ["derive"] }
 toml = { version = "0.8", optional = true }
 serde_json = { version = "1", optional = true }
 arc-swap = "1"
+tokio = { version = "1", features = ["rt", "time", "fs", "sync"], optional = true }
 tracing = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "fs", "sync"] }
 
 [features]
 toml = ["dep:toml"]
 json = ["dep:serde_json"]
+tokio = ["dep:tokio"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -37,6 +40,10 @@ required-features = ["toml"]
 [[test]]
 name = "json"
 required-features = ["json"]
+
+[[test]]
+name = "tokio_watcher"
+required-features = ["toml", "tokio"]
 
 [workspace]
 members = ["dyn-properties-derive"]
