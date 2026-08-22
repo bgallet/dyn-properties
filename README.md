@@ -18,6 +18,12 @@ constant — they're operational knobs that need to move without a restart:
 - **Short-lived certificates.** A TLS certificate that rotates every few
   hours needs to be picked up without dropping connections; restarting the
   process to reload it isn't an option.
+- **Circuit-breaker thresholds.** Tightening a failure-rate threshold or
+  retry backoff during an incident — and loosening it again once the
+  dependency recovers — shouldn't need a deploy either way.
+- **Feature-flag rollout percentage.** Dialing a canary from 1% to 100%,
+  or back to 0% at the first sign of trouble, is inherently a live
+  operation.
 
 `dyn-properties` lets values like these live in a config file instead of in
 code: edit the file, and the next reload picks up the change — validated
