@@ -1,70 +1,19 @@
-use std::fmt;
-use std::time::Duration;
+//! Parses human-friendly duration strings like `"30s"` or `"1h30m"` into a
+//! [`std::time::Duration`].
+//!
+//! Parsing is delegated to and re-exported from the [`humantime`] crate.
+//! It accepts a concatenation of `<number><unit>` spans, e.g. `"100ms"`, `"5m"`, `"2h 37min"`,
+//! `"1h30m"`.
+//! Supported units:
+//! `ns`, `us`/`µs`, `ms`, `s`/`sec`/`seconds`, `m`/`min`/`minutes`, `h`/`hours`,
+//! `d`/`days`, `w`/`weeks`, `M`/`months` (30.44 days), `y`/`years` (365.25 days).
+//!
+//! Warning that units are case-sensitive: `m` is minutes, `M` is months.
+pub use humantime::{DurationError, parse_duration};
 
 use serde::Deserialize;
 
-/// Parses a compact duration string like `"30s"` into a [`std::time::Duration`].
-///
-/// [`std::time::Duration`] has no [`FromStr`](std::str::FromStr) impl of its own, and TOML
-/// represents durations as this compact string rather than a table or a raw seconds count,
-/// so any field typed `std::time::Duration` and bounded with
-/// `#[range(min = "...", max = "...")]` (min/max as duration strings) routes through this
-/// parser — the derive macro wires it in automatically, both for `#[default("...")]`
-/// literals and for deserializing the field itself, so callers don't need to call it
-/// directly except to parse a duration string outside of a `#[derive(DynProperties)]`
-/// struct.
-///
-/// String grammar: `<digits><unit>`, where `<digits>` is one or more ASCII digits and
-/// `<unit>` is one of `ms` (milliseconds), `s` (seconds), `m` (minutes), `h` (hours), or
-/// `d` (days). No sign, decimal point, or whitespace is allowed (e.g. `"100ms"`, `"30s"`,
-/// `"5m"`, `"2h"`, `"1d"`).
-pub fn parse_duration(s: &str) -> Result<Duration, ParseDurationError> {
-    let unit_start = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
-    let (digits, unit) = s.split_at(unit_start);
-    if digits.is_empty() {
-        return Err(ParseDurationError::NoDigits(s.to_string()));
-    }
-    if unit.is_empty() {
-        return Err(ParseDurationError::NoUnit(s.to_string()));
-    }
-    let value: u64 = digits
-        .parse()
-        .map_err(|_| ParseDurationError::NumberTooLarge(s.to_string()))?;
-    match unit {
-        "ms" => Ok(Duration::from_millis(value)),
-        "s" => Ok(Duration::from_secs(value)),
-        "m" => Ok(Duration::from_secs(value * 60)),
-        "h" => Ok(Duration::from_secs(value * 3600)),
-        "d" => Ok(Duration::from_secs(value * 86400)),
-        _ => Err(ParseDurationError::InvalidUnit {
-            unit: unit.to_string(),
-            input: s.to_string(),
-        }),
-    }
-}
-
-/// The string failed to parse as a duration: it wasn't `<digits>` followed by one of
-/// `ms`, `s`, `m`, `h`, `d`.
-#[derive(Debug, PartialEq, Eq)]
-pub enum ParseDurationError {
-    NoDigits(String),
-    NoUnit(String),
-    InvalidUnit { unit: String, input: String },
-    NumberTooLarge(String),
-}
-
-impl fmt::Display for ParseDurationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoDigits(input) => write!(f, "no digits in {input:?}"),
-            Self::NoUnit(input) => write!(f, "no unit in {input:?}"),
-            Self::InvalidUnit { unit, input } => write!(f, "invalid unit {unit:?} in {input:?}"),
-            Self::NumberTooLarge(input) => write!(f, "number too large in {input:?}"),
-        }
-    }
-}
-
-impl std::error::Error for ParseDurationError {}
+use std::time::Duration;
 
 /// Deserializes a `std::time::Duration`-typed field from its compact string form,
 /// returning `Option<Duration>` to match the internal helper-struct representation the
@@ -116,6 +65,15 @@ mod tests {
     }
 
     #[test]
+    fn parses_compound_spans() {
+        assert_eq!(parse_duration("1h30m").unwrap(), Duration::from_secs(5400));
+        assert_eq!(
+            parse_duration("2h 37min").unwrap(),
+            Duration::from_secs(9420)
+        );
+    }
+
+    #[test]
     fn rejects_invalid_suffix() {
         assert!(parse_duration("100xyz").is_err());
     }
@@ -133,55 +91,56 @@ mod tests {
     #[test]
     fn rejects_empty_string() {
         assert!(parse_duration("").is_err());
+        assert!(parse_duration(" ").is_err());
     }
 
     #[test]
-    fn error_message_for_missing_digits() {
-        assert_eq!(
-            parse_duration("s").unwrap_err().to_string(),
-            "no digits in \"s\""
-        );
+    fn rejects_missing_unit() {
+        assert!(parse_duration("30").is_err());
     }
 
     #[test]
-    fn error_message_for_negative_values() {
-        assert_eq!(
-            parse_duration("-5s").unwrap_err().to_string(),
-            "no digits in \"-5s\""
-        );
+    fn rejects_overflow_instead_of_panicking_or_wrapping() {
+        // Regression guard for the old hand-rolled parser, where the unit multiplication
+        // (`value * 60` etc.) overflowed u64: debug builds panicked, release wrapped silently.
+        assert!(parse_duration("18446744073709551615m").is_err());
+        assert!(parse_duration("214011222337450d").is_err());
+        assert!(parse_duration("99999999999999999999s").is_err());
     }
 
     #[test]
-    fn error_message_for_empty_string() {
+    fn month_and_year_units_are_case_sensitive() {
         assert_eq!(
-            parse_duration("").unwrap_err().to_string(),
-            "no digits in \"\""
+            parse_duration("5M").unwrap(),
+            Duration::from_secs(13_150_080)
+        );
+        assert_ne!(parse_duration("5m").unwrap(), parse_duration("5M").unwrap());
+        assert_eq!(
+            parse_duration("1y").unwrap(),
+            Duration::from_secs(31_557_600)
         );
     }
 
+    #[cfg(feature = "json")]
     #[test]
-    fn error_message_for_missing_unit() {
-        assert_eq!(
-            parse_duration("30").unwrap_err().to_string(),
-            "no unit in \"30\""
-        );
-    }
+    fn deserialize_option_parses_strings_and_passes_none_through() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            // Same pairing the derive macro's generated helper always uses.
+            #[serde(default, deserialize_with = "deserialize_duration_option")]
+            field: Option<Duration>,
+        }
 
-    #[test]
-    fn error_message_for_invalid_unit() {
-        assert_eq!(
-            parse_duration("100xyz").unwrap_err().to_string(),
-            "invalid unit \"xyz\" in \"100xyz\""
-        );
-    }
+        let w: Wrapper = serde_json::from_str(r#"{"field": "90s"}"#).unwrap();
+        assert_eq!(w.field, Some(Duration::from_secs(90)));
 
-    #[test]
-    fn error_message_for_number_too_large() {
-        assert_eq!(
-            parse_duration("99999999999999999999s")
-                .unwrap_err()
-                .to_string(),
-            "number too large in \"99999999999999999999s\""
-        );
+        let w: Wrapper = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(w.field, None);
+
+        let w: Wrapper = serde_json::from_str(r#"{"field": null}"#).unwrap();
+        assert_eq!(w.field, None);
+
+        let result: Result<Wrapper, _> = serde_json::from_str(r#"{"field": "bogus"}"#);
+        assert!(result.is_err());
     }
 }
