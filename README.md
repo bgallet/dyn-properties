@@ -3,6 +3,35 @@
 Reads a config file — TOML, JSON, or your own `Format` — into a validated,
 hot-reloadable struct.
 
+## Why
+
+A surprising number of the "constants" in a running service aren't really
+constant — they're operational knobs that need to move without a restart:
+
+- **Rate limiting.** The request-rate ceiling and the blacklisted-user list
+  both need to change in response to what's happening right now, not on the
+  next deploy.
+- **Connection pool sizing.** Bumping a database pool's size during a
+  traffic spike — or shrinking it when a downstream dependency is
+  struggling — is often the difference between a smooth recovery and an
+  incident.
+- **Short-lived certificates.** A TLS certificate that rotates every few
+  hours needs to be picked up without dropping connections; restarting the
+  process to reload it isn't an option.
+- **Circuit-breaker thresholds.** Tightening a failure-rate threshold or
+  retry backoff during an incident — and loosening it again once the
+  dependency recovers — shouldn't need a deploy either way.
+- **Feature-flag rollout percentage.** Dialing a canary from 1% to 100%,
+  or back to 0% at the first sign of trouble, is inherently a live
+  operation.
+
+`dyn-properties` lets values like these live in a config file instead of in
+code: edit the file, and the next reload picks up the change — validated
+the same way every time, with a failed reload keeping the last good value
+in place rather than taking the service down.
+
+## Usage
+
 ```rust
 use dyn_properties::{DynProperties, PropertyWatcher, Toml};
 use std::sync::Arc;
