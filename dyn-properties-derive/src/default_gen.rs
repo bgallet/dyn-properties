@@ -46,7 +46,11 @@ fn field_default(field: &ParsedField) -> TokenStream {
                     .expect(&::std::format!("invalid #[default] duration literal on field `{}`", #field_name))
             }
         },
-        FieldKind::Nested => quote_spanned! {span=> #expr },
+        // Opaque fields (Vec/HashMap/... or an explicit #[opaque]) get the same
+        // splice-the-expression-directly treatment as Nested — #[default(...)] just
+        // needs to be a valid expression of the field's own type, e.g.
+        // #[default(vec!["dev".to_string()])].
+        FieldKind::Nested | FieldKind::Opaque => quote_spanned! {span=> #expr },
         FieldKind::Option(_) => {
             unreachable!("Option<Option<T>> is rejected during type classification")
         }

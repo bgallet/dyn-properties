@@ -16,6 +16,7 @@ pub enum Bound {
 pub struct FieldAttrs {
     pub bound: Option<Bound>,
     pub default: Option<Expr>,
+    pub opaque: bool,
     pub required: bool,
 }
 
@@ -41,6 +42,7 @@ fn parse_min_max(attr: &Attribute) -> Result<(Expr, Expr)> {
 pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
     let mut bound: Option<Bound> = None;
     let mut default: Option<Expr> = None;
+    let mut opaque = false;
     let mut required = false;
 
     for attr in attrs {
@@ -59,6 +61,11 @@ pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
             });
         } else if attr.path().is_ident("default") {
             default = Some(attr.parse_args()?);
+        } else if attr.path().is_ident("opaque") {
+            if let syn::Meta::List(_) | syn::Meta::NameValue(_) = &attr.meta {
+                return Err(Error::new_spanned(attr, "#[opaque] takes no arguments"));
+            }
+            opaque = true;
         } else if attr.path().is_ident("required") {
             if let syn::Meta::List(_) | syn::Meta::NameValue(_) = &attr.meta {
                 return Err(Error::new_spanned(attr, "#[required] takes no arguments"));
@@ -70,6 +77,7 @@ pub fn parse_field_attrs(attrs: &[Attribute]) -> Result<FieldAttrs> {
     Ok(FieldAttrs {
         bound,
         default,
+        opaque,
         required,
     })
 }
@@ -136,7 +144,25 @@ mod tests {
         .unwrap();
         assert!(attrs.bound.is_none());
         assert!(attrs.default.is_none());
+        assert!(!attrs.opaque);
         assert!(!attrs.required);
+    }
+
+    #[test]
+    fn parses_opaque_flag() {
+        let attrs = first_field_attrs(quote::quote! {
+            struct Foo { #[opaque] field: CustomType }
+        })
+        .unwrap();
+        assert!(attrs.opaque);
+    }
+
+    #[test]
+    fn opaque_rejects_arguments() {
+        let result = first_field_attrs(quote::quote! {
+            struct Foo { #[opaque(true)] field: CustomType }
+        });
+        assert!(result.is_err());
     }
 
     #[test]

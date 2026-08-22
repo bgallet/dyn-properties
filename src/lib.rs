@@ -65,6 +65,48 @@
 //! assert!(AppConfig::default().validate().is_ok());
 //! ```
 //!
+//! ## Fields that don't fit String/numeric/Duration/nested
+//!
+//! A field whose type is `Vec<T>`, `HashMap<K, V>`, `BTreeMap`, `HashSet`, `BTreeSet`,
+//! or `VecDeque` is recognized automatically: it's deserialized and defaulted like any
+//! other field (falling back to an empty collection if `#[default(...)]` is omitted),
+//! but isn't recursively validated, since a plain collection has no `Validate` impl of
+//! its own to call. `#[default(...)]` on one of these takes any expression of the
+//! field's own type — not just a literal:
+//!
+//! ```
+//! # use dyn_properties::DynProperties;
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     #[default(vec!["dev".to_string()])]
+//!     tags: Vec<String>,
+//! }
+//! ```
+//!
+//! Any *other* field type that isn't itself `#[derive(DynProperties)]` — a plain enum,
+//! a third-party struct, a non-`std` map type — needs the same treatment but can't be
+//! recognized by name; mark it `#[opaque]` explicitly:
+//!
+//! ```
+//! # use dyn_properties::DynProperties;
+//! #[derive(serde::Deserialize, Default)]
+//! enum LogFormat {
+//!     #[default]
+//!     Text,
+//!     Json,
+//! }
+//!
+//! #[derive(DynProperties)]
+//! struct AppConfig {
+//!     #[opaque]
+//!     format: LogFormat,
+//! }
+//! ```
+//!
+//! Without `#[opaque]`, a field like this is assumed to be its own
+//! `#[derive(DynProperties)]` struct and the generated code calls `Validate::validate`
+//! on it — which fails to compile for a type that doesn't implement it.
+//!
 //! ## Required fields
 //!
 //! Some values — an API key, a database password — should never fall back to a

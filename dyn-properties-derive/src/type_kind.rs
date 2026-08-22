@@ -5,7 +5,15 @@ pub enum FieldKind {
     Numeric,
     Duration,
     Option(Box<FieldKind>),
+    /// A field type that's itself `#[derive(DynProperties)]`: gets a recursive
+    /// `Validate::validate()` call in the generated `validate()` impl.
     Nested,
+    /// A field type that only needs `Deserialize + Default` — no `Validate` call is
+    /// generated, since the type isn't (and isn't assumed to be) `DynProperties`-derived.
+    /// Auto-detected for the common standard collections (see [`OPAQUE_TYPES`]); any
+    /// other non-`DynProperties` type needs an explicit `#[opaque]` attribute to be
+    /// classified this way instead of (incorrectly) as [`FieldKind::Nested`].
+    Opaque,
 }
 
 impl FieldKind {
@@ -21,6 +29,15 @@ impl FieldKind {
 const NUMERIC_TYPES: &[&str] = &[
     "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32",
     "f64",
+];
+
+/// Standard-library collection types auto-classified as [`FieldKind::Opaque`] — common
+/// enough that requiring an explicit `#[opaque]` attribute on every one would be pure
+/// friction. Anything else that isn't `DynProperties`-derived (a plain enum, a
+/// third-party struct, a non-std map/set type) still needs `#[opaque]` explicitly,
+/// since the macro can't detect "does this type implement `Validate`" on its own.
+const OPAQUE_TYPES: &[&str] = &[
+    "Vec", "HashMap", "BTreeMap", "HashSet", "BTreeSet", "VecDeque",
 ];
 
 pub fn classify(ty: &Type) -> Result<FieldKind> {
@@ -60,6 +77,10 @@ pub fn classify(ty: &Type) -> Result<FieldKind> {
 
     if NUMERIC_TYPES.contains(&ident_str.as_str()) {
         return Ok(FieldKind::Numeric);
+    }
+
+    if OPAQUE_TYPES.contains(&ident_str.as_str()) {
+        return Ok(FieldKind::Opaque);
     }
 
     Ok(FieldKind::Nested)
@@ -123,5 +144,50 @@ mod tests {
     fn rejects_nested_option() {
         let ty: Type = parse_quote!(Option<Option<u32>>);
         assert!(classify(&ty).is_err());
+    }
+
+    #[test]
+    fn classifies_vec_as_opaque() {
+        let ty: Type = parse_quote!(Vec<String>);
+        assert!(matches!(classify(&ty).unwrap(), FieldKind::Opaque));
+    }
+
+    #[test]
+    fn classifies_hash_map_as_opaque() {
+        let ty: Type = parse_quote!(HashMap<String, String>);
+        assert!(matches!(classify(&ty).unwrap(), FieldKind::Opaque));
+    }
+
+    #[test]
+    fn classifies_btree_map_as_opaque() {
+        let ty: Type = parse_quote!(BTreeMap<String, u32>);
+        assert!(matches!(classify(&ty).unwrap(), FieldKind::Opaque));
+    }
+
+    #[test]
+    fn classifies_hash_set_as_opaque() {
+        let ty: Type = parse_quote!(HashSet<String>);
+        assert!(matches!(classify(&ty).unwrap(), FieldKind::Opaque));
+    }
+
+    #[test]
+    fn classifies_btree_set_as_opaque() {
+        let ty: Type = parse_quote!(BTreeSet<String>);
+        assert!(matches!(classify(&ty).unwrap(), FieldKind::Opaque));
+    }
+
+    #[test]
+    fn classifies_vec_deque_as_opaque() {
+        let ty: Type = parse_quote!(VecDeque<String>);
+        assert!(matches!(classify(&ty).unwrap(), FieldKind::Opaque));
+    }
+
+    #[test]
+    fn classifies_option_of_vec_as_option_opaque() {
+        let ty: Type = parse_quote!(Option<Vec<String>>);
+        match classify(&ty).unwrap() {
+            FieldKind::Option(inner) => assert!(matches!(*inner, FieldKind::Opaque)),
+            _ => panic!("expected Option"),
+        }
     }
 }

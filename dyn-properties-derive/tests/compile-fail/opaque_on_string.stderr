@@ -1,0 +1,5 @@
+error: #[opaque] cannot be used on field `field`: incompatible field type
+ --> tests/compile-fail/opaque_on_string.rs:7:5
+  |
+7 |     field: String,
+  |     ^^^^^

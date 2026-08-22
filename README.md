@@ -46,6 +46,13 @@ the config file — everything else falls back to its default. Bounds
 failed reload keeps the previously-loaded value in place rather than
 propagating the error.
 
+`Vec<T>`, `HashMap`, `BTreeMap`, `HashSet`, `BTreeSet`, and `VecDeque` fields
+are recognized automatically — deserialized and defaulted (`#[default(...)]`
+takes any expression of the field's type, e.g. `vec!["dev".to_string()]`),
+but not recursively validated. Any other field type that isn't itself
+`#[derive(DynProperties)]` needs the same treatment but can't be recognized
+by name — mark it `#[opaque]` explicitly.
+
 ## Cargo features
 
 Neither format is enabled by default — enable exactly the one(s) you need:

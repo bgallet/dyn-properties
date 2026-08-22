@@ -42,6 +42,10 @@ name = "json"
 required-features = ["json"]
 
 [[test]]
+name = "opaque"
+required-features = ["toml"]
+
+[[test]]
 name = "tokio_watcher"
 required-features = ["toml", "tokio"]
 
