@@ -6,7 +6,6 @@ use syn::{Data, DeriveInput, Error, Fields, Result, parse_macro_input};
 mod attrs;
 mod default_gen;
 mod deserialize_gen;
-mod duration_syntax;
 mod required_gen;
 mod type_kind;
 mod validate_gen;
@@ -277,6 +276,10 @@ fn check_duration_literal_expr(expr: &syn::Expr) -> Result<()> {
             "Duration bounds and defaults must be string literals (e.g. \"30s\"), so they can be validated at compile time",
         ));
     };
-    duration_syntax::validate_duration_literal_syntax(&lit_str.value())
-        .map_err(|msg| Error::new_spanned(lit_str, msg))
+    // Calls humantime::parse_duration directly (the same function `dyn_properties` re-exports
+    // and its generated code calls at runtime), so the compile-time check and runtime
+    // deserialization share one grammar and cannot drift apart.
+    humantime::parse_duration(&lit_str.value())
+        .map(|_| ())
+        .map_err(|e| Error::new_spanned(lit_str, format!("invalid duration literal: {e}")))
 }

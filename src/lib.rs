@@ -194,7 +194,7 @@ pub use dyn_properties_derive::DynProperties;
 mod duration;
 #[doc(hidden)]
 pub use duration::deserialize_duration_option;
-pub use duration::{ParseDurationError, parse_duration};
+pub use duration::{DurationError, parse_duration};
 
 mod format;
 pub use format::Format;

@@ -1,4 +1,4 @@
-error: no digits in "not-a-duration"
+error: invalid duration literal: expected number at 0
   --> tests/compile-fail/duration_bound_invalid_literal.rs:12:19
    |
 12 |     #[range(min = "not-a-duration", max = "1h")]

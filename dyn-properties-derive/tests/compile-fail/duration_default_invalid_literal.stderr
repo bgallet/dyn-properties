@@ -1,4 +1,4 @@
-error: no digits in "not-a-duration"
+error: invalid duration literal: expected number at 0
   --> tests/compile-fail/duration_default_invalid_literal.rs:13:15
    |
 13 |     #[default("not-a-duration")]
